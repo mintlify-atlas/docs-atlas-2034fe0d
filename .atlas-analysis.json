@@ -1,0 +1,94 @@
+{
+  "projectType": "framework",
+  "projectName": "Arc",
+  "projectDescription": "A highly experimental JavaScript runtime built on the BEAM VM, bringing JavaScript semantics to Erlang's actor model",
+  "theme": "aspen",
+  "primaryColor": "#8B5CF6",
+  "lightColor": "#A78BFA",
+  "darkColor": "#7C3AED",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/overview",
+              "concepts/javascript-on-beam",
+              "concepts/actor-model",
+              "concepts/modules"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/running-code",
+              "guides/using-repl",
+              "guides/actor-programming",
+              "guides/module-system"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/parser",
+              "architecture/compiler",
+              "architecture/vm",
+              "architecture/builtins"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Runtime API",
+            "pages": [
+              "api/arc-namespace",
+              "api/global-objects"
+            ]
+          },
+          {
+            "group": "JavaScript Compatibility",
+            "pages": [
+              "api/built-in-objects",
+              "api/test262-conformance"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "JavaScript execution on the Erlang BEAM VM",
+    "Actor-based concurrency with Arc.spawn, Arc.send, and Arc.receive",
+    "ES2023+ parser with module system support",
+    "Bytecode compiler with three-phase pipeline",
+    "REPL with interactive JavaScript evaluation",
+    "ECMAScript Test262 conformance testing"
+  ],
+  "publicApiSurface": [
+    "Arc.spawn(fn)",
+    "Arc.send(pid, message)",
+    "Arc.receive(timeout?)",
+    "Arc.self()",
+    "Arc.log(...args)",
+    "Arc.sleep(ms)",
+    "parser.parse(source, mode)",
+    "compiler.compile(program)",
+    "module.compile_bundle(entry, source, resolver)",
+    "module.evaluate_bundle(bundle, heap, builtins, global)",
+    "vm.run_and_drain(template, heap, builtins, global)"
+  ]
+}
