@@ -1,0 +1,479 @@
+---
+title: ES module system
+description: Learn how to write and use ES modules in Arc with import, export, and the compile_bundle workflow
+---
+
+Arc supports ECMAScript modules (ESM), allowing you to organize code into reusable components with `import` and `export`. Arc's module system is based on the ES specification and uses a two-phase compilation model for optimal performance.
+
+## Module basics
+
+Any `.js` or `.mjs` file is treated as an ES module in Arc. Modules have their own scope and must explicitly export values to make them available to other modules.
+
+### Creating a module
+
+Create a file `math.js`:
+
+```javascript math.js
+export function add(a, b) {
+  return a + b;
+}
+
+export function multiply(a, b) {
+  return a * b;
+}
+
+export const PI = 3.14159;
+```
+
+### Importing from a module
+
+Create a file `main.js`:
+
+```javascript main.js
+import { add, multiply, PI } from './math.js';
+
+Arc.log('2 + 3 =', add(2, 3));
+Arc.log('4 * 5 =', multiply(4, 5));
+Arc.log('PI =', PI);
+```
+
+Run the entry point:
+
+```bash
+arc main.js
+```
+
+<Note>
+  File extensions are **required** in import specifiers. Write `'./math.js'`, not `'./math'`.
+</Note>
+
+## Export syntax
+
+Arc supports all standard ES module export patterns:
+
+### Named exports
+
+Export multiple values by name:
+
+```javascript
+export const version = '1.0.0';
+
+export function greet(name) {
+  return `Hello, ${name}!`;
+}
+
+export class User {
+  constructor(name) {
+    this.name = name;
+  }
+}
+```
+
+### Default exports
+
+Export a single default value:
+
+```javascript logger.js
+export default function log(message) {
+  Arc.log('[LOG]', message);
+}
+```
+
+Import it:
+
+```javascript
+import log from './logger.js';
+log('Hello!');
+```
+
+### Re-exports
+
+Re-export values from other modules:
+
+```javascript utils.js
+export { add, multiply } from './math.js';
+export { default as log } from './logger.js';
+export * from './helpers.js';
+```
+
+<Accordion title="Export syntax reference">
+  ```javascript
+  // Named exports
+  export const x = 1;
+  export function f() {}
+  export class C {}
+  
+  // Default export
+  export default function() {}
+  export default class {}
+  export default 42;
+  
+  // Re-exports
+  export { x, y } from './other.js';
+  export { x as newName } from './other.js';
+  export * from './other.js';
+  export * as namespace from './other.js';
+  ```
+</Accordion>
+
+## Import syntax
+
+Arc supports all standard ES module import patterns:
+
+### Named imports
+
+Import specific exports:
+
+```javascript
+import { add, multiply } from './math.js';
+import { add as sum } from './math.js'; // Rename
+```
+
+### Default imports
+
+Import the default export:
+
+```javascript
+import log from './logger.js';
+```
+
+### Namespace imports
+
+Import all exports as a namespace object:
+
+```javascript
+import * as math from './math.js';
+
+math.add(2, 3);
+math.PI;
+```
+
+### Mixed imports
+
+Combine default and named imports:
+
+```javascript
+import log, { version } from './logger.js';
+```
+
+### Side-effect imports
+
+Import a module for its side effects only:
+
+```javascript
+import './init.js';
+```
+
+<Accordion title="Import syntax reference">
+  ```javascript
+  // Named imports
+  import { x } from './mod.js';
+  import { x, y } from './mod.js';
+  import { x as newX } from './mod.js';
+  
+  // Default import
+  import x from './mod.js';
+  
+  // Namespace import
+  import * as mod from './mod.js';
+  
+  // Mixed
+  import x, { y, z } from './mod.js';
+  import x, * as mod from './mod.js';
+  
+  // Side effects only
+  import './init.js';
+  ```
+</Accordion>
+
+## Module resolution
+
+Arc resolves module specifiers following these rules:
+
+<Steps>
+  <Step title="Relative paths">
+    Specifiers starting with `./` or `../` are resolved relative to the importing module:
+
+    ```javascript
+    import { x } from './sibling.js';     // Same directory
+    import { y } from '../parent.js';    // Parent directory
+    import { z } from './sub/child.js';  // Subdirectory
+    ```
+  </Step>
+
+  <Step title="Builtin modules">
+    The `arc` module is built-in and available everywhere:
+
+    ```javascript
+    import { spawn, send, receive } from 'arc';
+    ```
+
+    <Note>
+      Currently, `arc` is the only builtin module. The `Arc` global provides the same API without requiring an import.
+    </Note>
+  </Step>
+
+  <Step title="Absolute paths">
+    Absolute paths are resolved from the filesystem root:
+
+    ```javascript
+    import { config } from '/etc/arc/config.js';
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Arc does **not** support Node.js-style module resolution (no `node_modules`, no package.json lookups). Only explicit file paths and the builtin `arc` module work.
+</Warning>
+
+## The compile_bundle workflow
+
+Arc uses a **two-phase module system** for efficiency:
+
+### Phase 1: Compile-time (AOT)
+
+When you run `arc main.js`, Arc compiles all modules ahead-of-time:
+
+<Steps>
+  <Step title="Parse the entry module">
+    Parse `main.js` into an abstract syntax tree (AST)
+  </Step>
+
+  <Step title="Extract dependencies">
+    Scan for `import` statements to find all dependencies
+  </Step>
+
+  <Step title="Recursively compile deps">
+    Parse and compile each dependency module
+  </Step>
+
+  <Step title="Build the module bundle">
+    Create a `ModuleBundle` containing all compiled modules
+  </Step>
+</Steps>
+
+The result is a **pure data structure** (the bundle) with no source code or AST — just bytecode.
+
+### Phase 2: Runtime evaluation
+
+After compilation, Arc evaluates the bundle:
+
+<Steps>
+  <Step title="Topological sort">
+    Determine module evaluation order (dependencies first)
+  </Step>
+
+  <Step title="Execute each module">
+    Run module code and collect exports
+  </Step>
+
+  <Step title="Resolve imports">
+    Link imports to their corresponding exports
+  </Step>
+
+  <Step title="Return completion value">
+    The entry module's completion value is returned
+  </Step>
+</Steps>
+
+<Accordion title="Why two phases?">
+  The two-phase design enables:
+
+  - **Serialization**: `ModuleBundle` is a pure Erlang term, serializable with `term_to_binary`
+  - **Caching**: Bundles can be cached and reused without re-parsing
+  - **Deployment**: Compile once, deploy bytecode without source files
+  - **Performance**: No parsing or compilation during runtime
+
+  This matches how production JS bundlers work (Webpack, Rollup, etc.) but at the runtime level.
+</Accordion>
+
+## Circular dependencies
+
+Arc handles circular module dependencies correctly:
+
+```javascript a.js
+import { b } from './b.js';
+export const a = 'A';
+Arc.log('a.js sees b =', b);
+```
+
+```javascript b.js
+import { a } from './a.js';
+export const b = 'B';
+Arc.log('b.js sees a =', a);
+```
+
+Evaluation order is deterministic:
+1. `a.js` starts evaluating
+2. Encounters `import` from `b.js`, starts evaluating `b.js`
+3. `b.js` encounters circular `import` from `a.js`
+4. Since `a.js` is already evaluating, `a` is `undefined` at this point
+5. `b.js` finishes, exports `b = 'B'`
+6. `a.js` continues, now sees `b = 'B'`
+
+This matches the ECMAScript specification for circular module dependencies.
+
+## Module scope
+
+Each module has its own scope:
+
+```javascript
+// Private to this module
+const secret = 'hidden';
+
+function helper() {
+  return secret;
+}
+
+// Exported (public)
+export function getSecret() {
+  return helper();
+}
+```
+
+Variables and functions not explicitly exported are **private** and inaccessible to other modules.
+
+### Top-level this
+
+In modules, top-level `this` is `undefined` (not `globalThis`):
+
+```javascript
+Arc.log(this); // undefined
+```
+
+This matches browser and Node.js ESM behavior.
+
+## Module vs script mode
+
+Arc runs `.js` and `.mjs` files as modules, and `.cjs` files as scripts:
+
+| Feature | Module mode | Script mode |
+|---------|-------------|-------------|
+| `import`/`export` | ✅ Yes | ❌ No |
+| Top-level `await` | ✅ Yes | ❌ No |
+| Top-level `this` | `undefined` | `globalThis` |
+| Global scope | No | Yes |
+| File extension | `.js`, `.mjs` | `.cjs` |
+
+Use **module mode** for new code. Script mode exists for compatibility with traditional JavaScript.
+
+## Error handling
+
+Module errors fall into several categories:
+
+<CodeGroup>
+```javascript Syntax errors
+// math.js
+export function add(a, b {
+  return a + b;  // Missing closing paren
+}
+```
+
+```bash Output
+SyntaxError in 'math.js': Expected ')'
+```
+</CodeGroup>
+
+<CodeGroup>
+```javascript Resolution errors
+import { add } from './missing.js';
+```
+
+```bash Output
+ResolutionError: Cannot resolve module './missing.js' from 'main.js': file not found
+```
+</CodeGroup>
+
+<CodeGroup>
+```javascript Link errors
+// Importing something that doesn't exist
+import { doesNotExist } from './math.js';
+```
+
+```bash Output
+// No error at import time!
+// Will be 'undefined' when accessed
+```
+</CodeGroup>
+
+<Note>
+  Unlike some bundlers, Arc does **not** validate that named imports exist at link time. Missing imports resolve to `undefined`, matching browser ESM behavior.
+</Note>
+
+## Example module structure
+
+Here's a complete example showing how to structure a multi-file Arc program:
+
+```
+project/
+├── main.js          # Entry point
+├── actors/
+│   ├── counter.js   # Counter actor
+│   └── logger.js    # Logger actor
+└── lib/
+    ├── messages.js  # Message type definitions
+    └── utils.js     # Utility functions
+```
+
+```javascript main.js
+import { createCounter } from './actors/counter.js';
+import { createLogger } from './actors/logger.js';
+
+const logger = createLogger();
+const counter = createCounter(logger);
+
+Arc.send(counter, { type: 'inc', n: 10 });
+Arc.send(counter, { type: 'get', reply: Arc.self() });
+
+const result = Arc.receive(1000);
+Arc.log('Final count:', result.count);
+```
+
+```javascript actors/counter.js
+export function createCounter(logger) {
+  return Arc.spawn(() => {
+    let count = 0;
+    while (true) {
+      const msg = Arc.receive();
+      if (msg.type === 'inc') {
+        count += msg.n;
+        Arc.send(logger, { type: 'log', text: `Count: ${count}` });
+      }
+      if (msg.type === 'get') {
+        Arc.send(msg.reply, { count });
+      }
+    }
+  });
+}
+```
+
+Run it:
+
+```bash
+arc main.js
+```
+
+Arc automatically resolves and bundles all dependencies.
+
+## Limitations
+
+Arc's module system has some current limitations:
+
+- **No dynamic import**: `import()` expressions are not yet supported
+- **No package manager**: No npm, no package.json, no node_modules
+- **No CDN imports**: Can't import from URLs like Deno
+- **No import maps**: No custom resolution rules
+- **No conditional exports**: No "browser" vs "node" exports
+
+These features may be added in future releases.
+
+## What's next?
+
+<CardGroup cols={2}>
+  <Card title="Actor programming" icon="bolt" href="/guides/actor-programming">
+    Combine modules with actors
+  </Card>
+  <Card title="Running code" icon="play" href="/guides/running-code">
+    Different ways to execute Arc programs
+  </Card>
+</CardGroup>

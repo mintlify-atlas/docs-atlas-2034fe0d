@@ -1,0 +1,306 @@
+---
+title: Global objects
+description: Global objects, functions, and properties available in the Arc JavaScript runtime
+---
+
+Arc provides a standard set of global objects and functions that match the ECMAScript specification, with some BEAM-specific additions.
+
+## Global object structure
+
+The global object in Arc contains all standard ECMAScript built-ins plus the `Arc` namespace for BEAM-specific functionality.
+
+### Standard globals
+
+Arc implements standard ECMAScript global properties and functions:
+
+<CardGroup cols={2}>
+  <Card title="Value properties" icon="cube">
+    - `undefined`
+    - `NaN`
+    - `Infinity`
+    - `globalThis`
+  </Card>
+  
+  <Card title="Function properties" icon="function">
+    - `parseInt()`
+    - `parseFloat()`
+    - `isNaN()`
+    - `isFinite()`
+    - `eval()`
+  </Card>
+  
+  <Card title="Constructor functions" icon="wrench">
+    - `Object`
+    - `Function`
+    - `Array`
+    - `String`
+    - `Number`
+    - `Boolean`
+    - `Symbol`
+    - `Promise`
+    - `Map` / `Set`
+    - `WeakMap` / `WeakSet`
+    - `RegExp`
+    - Error types
+  </Card>
+  
+  <Card title="Namespaced objects" icon="folder">
+    - `Math`
+    - `JSON`
+    - `Arc` (BEAM-specific)
+  </Card>
+</CardGroup>
+
+---
+
+## globalThis
+
+The `globalThis` property provides access to the global object in any environment. This is the standard ECMAScript way to access the global scope.
+
+```javascript
+// All of these refer to the same object
+globalThis.Array === Array;  // true
+globalThis.Math === Math;    // true
+globalThis.Arc === Arc;      // true
+
+// Adding a global property
+globalThis.myGlobal = 'value';
+Arc.log(myGlobal);  // 'value'
+```
+
+<Info>
+`globalThis` is the recommended way to access the global object in portable code, as it works consistently across all JavaScript environments.
+</Info>
+
+---
+
+## Global functions
+
+### parseInt()
+
+Parses a string argument and returns an integer of the specified radix.
+
+<ParamField path="string" type="string" required>
+  The value to parse. Leading whitespace is ignored.
+</ParamField>
+
+<ParamField path="radix" type="number">
+  An integer between 2 and 36 representing the base. If omitted or 0, base 10 is assumed (or base 16 if the string starts with `0x`).
+</ParamField>
+
+**Returns:** `number` - The parsed integer, or `NaN` if the first non-whitespace character cannot be converted.
+
+```javascript
+parseInt('42');        // 42
+parseInt('  42  ');    // 42
+parseInt('0xFF');      // 255
+parseInt('101', 2);    // 5 (binary)
+parseInt('42px');      // 42
+parseInt('abc');       // NaN
+```
+
+---
+
+### parseFloat()
+
+Parses a string argument and returns a floating-point number.
+
+<ParamField path="string" type="string" required>
+  The value to parse. Leading whitespace is ignored.
+</ParamField>
+
+**Returns:** `number` - The parsed floating-point number, or `NaN` if the first non-whitespace character cannot be converted.
+
+```javascript
+parseFloat('3.14');      // 3.14
+parseFloat('  2.5  ');   // 2.5
+parseFloat('2.5em');     // 2.5
+parseFloat('abc');       // NaN
+```
+
+---
+
+### isNaN()
+
+Determines whether a value is `NaN` after coercing it to a number.
+
+<ParamField path="value" type="any" required>
+  The value to test. Non-number values are coerced to numbers before testing.
+</ParamField>
+
+**Returns:** `boolean` - `true` if the value is `NaN` after coercion, `false` otherwise.
+
+```javascript
+isNaN(NaN);        // true
+isNaN('hello');    // true (coerces to NaN)
+isNaN('42');       // false (coerces to 42)
+isNaN(undefined);  // true (coerces to NaN)
+isNaN({});         // true (coerces to NaN)
+```
+
+<Warning>
+`isNaN()` coerces its argument to a number before testing. Use `Number.isNaN()` for a more reliable check that doesn't perform coercion.
+</Warning>
+
+---
+
+### isFinite()
+
+Determines whether a value is a finite number after coercing it to a number.
+
+<ParamField path="value" type="any" required>
+  The value to test. Non-number values are coerced to numbers before testing.
+</ParamField>
+
+**Returns:** `boolean` - `true` if the value is a finite number after coercion, `false` otherwise.
+
+```javascript
+isFinite(42);         // true
+isFinite(Infinity);   // false
+isFinite(-Infinity);  // false
+isFinite(NaN);        // false
+isFinite('42');       // true (coerces to 42)
+isFinite('hello');    // false (coerces to NaN)
+```
+
+---
+
+### eval()
+
+Evaluates JavaScript code represented as a string.
+
+<ParamField path="code" type="string" required>
+  A string representing JavaScript code to evaluate.
+</ParamField>
+
+**Returns:** The completion value of evaluating the given code. If the code is not a string, returns the argument unchanged.
+
+```javascript
+eval('2 + 2');              // 4
+eval('var x = 10; x * 2');  // 20
+
+const code = 'Array.isArray([1, 2, 3])';
+eval(code);                 // true
+```
+
+<Warning>
+Using `eval()` can be dangerous if used with untrusted input. It executes arbitrary code with the privileges of the caller. Avoid using `eval()` when possible.
+</Warning>
+
+---
+
+## URI handling functions
+
+Arc provides standard URI encoding and decoding functions:
+
+### encodeURI()
+
+Encodes a URI by escaping special characters, except those that are valid in URIs.
+
+```javascript
+encodeURI('https://example.com/path?q=hello world');
+// 'https://example.com/path?q=hello%20world'
+```
+
+### decodeURI()
+
+Decodes a URI previously created by `encodeURI()` or similar.
+
+```javascript
+decodeURI('https://example.com/path?q=hello%20world');
+// 'https://example.com/path?q=hello world'
+```
+
+### encodeURIComponent()
+
+Encodes a URI component by escaping all special characters.
+
+```javascript
+encodeURIComponent('hello world?');
+// 'hello%20world%3F'
+```
+
+### decodeURIComponent()
+
+Decodes a URI component previously created by `encodeURIComponent()` or similar.
+
+```javascript
+decodeURIComponent('hello%20world%3F');
+// 'hello world?'
+```
+
+---
+
+## Legacy functions
+
+### escape() / unescape()
+
+<Warning>
+Deprecated. Use `encodeURIComponent()` and `decodeURIComponent()` instead.
+</Warning>
+
+Arc includes `escape()` and `unescape()` for compatibility with legacy code, but these functions are deprecated and should not be used in new code.
+
+---
+
+## Arc namespace
+
+The `Arc` global namespace provides BEAM-specific concurrency and process management functions:
+
+```javascript
+Arc.spawn()     // Spawn a new BEAM process
+Arc.send()      // Send a message to a process
+Arc.receive()   // Receive a message
+Arc.self()      // Get current process ID
+Arc.log()       // Print to stdout
+Arc.sleep()     // Sleep for milliseconds
+Arc.peek()      // Inspect promise state (non-standard)
+```
+
+See the [Arc namespace](/api/arc-namespace) reference for detailed documentation.
+
+---
+
+## Differences from browser environments
+
+<AccordionGroup>
+  <Accordion title="No console object">
+    Arc does not provide the browser `console` object. Use `Arc.log()` instead for logging output.
+  </Accordion>
+  
+  <Accordion title="No DOM APIs">
+    Arc is a server-side runtime and does not include DOM APIs like `document`, `window`, `setTimeout`, or `fetch`.
+  </Accordion>
+  
+  <Accordion title="No timers">
+    Traditional timer functions (`setTimeout`, `setInterval`) are not available. Use `Arc.sleep()` for delays in spawned processes.
+  </Accordion>
+  
+  <Accordion title="No module system (yet)">
+    Arc currently executes single-file scripts. ES modules (`import`/`export`) and CommonJS (`require`) are not yet implemented.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Global object extensibility
+
+You can add properties to the global object just like in standard JavaScript:
+
+```javascript
+// Add a global variable
+globalThis.APP_VERSION = '1.0.0';
+
+// Add a global function
+globalThis.greet = function(name) {
+  Arc.log('Hello,', name);
+};
+
+// Use them anywhere
+greet('Arc');  // Hello, Arc
+Arc.log(APP_VERSION);  // 1.0.0
+```
+
+<Tip>
+For better code organization, consider using the module pattern with closures instead of polluting the global namespace.
+</Tip>

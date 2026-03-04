@@ -1,0 +1,379 @@
+---
+title: Actor model
+description: Actor-based concurrency with message passing in Arc
+---
+
+Arc brings Erlang's actor model to JavaScript. Every call to `Arc.spawn()` creates a new BEAM process with isolated memory and message-passing communication.
+
+## What are actors?
+
+Actors are lightweight processes that:
+
+- Run **concurrently** on the BEAM scheduler
+- Have **isolated memory** — no shared state between processes
+- Communicate via **asynchronous message passing**
+- Can **spawn** new actors
+- Can **crash** without affecting other actors
+
+<Info>
+BEAM processes are not OS threads. You can spawn millions of them — each uses only a few KB of memory.
+</Info>
+
+## Arc.spawn()
+
+Create a new BEAM process running a JavaScript function:
+
+```javascript
+const pid = Arc.spawn(() => {
+  Arc.log('Hello from child process');
+});
+
+Arc.log('Main process:', Arc.self());
+Arc.log('Child process:', pid);
+```
+
+**Output:**
+```
+Hello from child process
+Main process: Pid<0.123.0>
+Child process: Pid<0.124.0>
+```
+
+The function passed to `Arc.spawn()` runs in a **new BEAM process**. It has its own heap, stack, and execution context.
+
+<Note>
+`Arc.spawn()` is implemented in `src/arc/vm/builtins/arc.gleam` and creates a BEAM process using Erlang's `spawn/1`.
+</Note>
+
+## Message passing
+
+Actors communicate by sending messages:
+
+<Steps>
+  <Step title="Get process ID">
+    ```javascript
+    const myPid = Arc.self();
+    ```
+    Returns a `Pid` object representing the current process.
+  </Step>
+  
+  <Step title="Send a message">
+    ```javascript
+    Arc.send(pid, { type: 'greeting', text: 'Hello!' });
+    ```
+    Sends a message to the target process. Messages are queued in the recipient's mailbox.
+  </Step>
+  
+  <Step title="Receive messages">
+    ```javascript
+    const msg = Arc.receive();  // Block forever
+    // or
+    const msg = Arc.receive(1000);  // Timeout after 1000ms
+    ```
+    Blocks the current process until a message arrives. Returns `undefined` on timeout.
+  </Step>
+</Steps>
+
+### Example: ping-pong
+
+<CodeGroup>
+```javascript examples/ping_pong.js
+var pong_pid = Arc.spawn(() => {
+	while (true) {
+		var msg = Arc.receive();
+		Arc.log('pong received:', msg.text, 'from', msg.from);
+		Arc.send(msg.from, { text: 'pong', count: msg.count + 1, from: Arc.self() });
+		if (msg.count >= 5) {
+			return;
+		}
+	}
+});
+
+// Ping loop in the main process
+var count = 0;
+Arc.send(pong_pid, { text: 'ping', count: count, from: Arc.self() });
+
+while (count < 5) {
+	var reply = Arc.receive(2000);
+	if (reply === undefined) {
+		Arc.log('Timed out!');
+		count = 999;
+	} else {
+		Arc.log('ping received:', reply.text, 'count:', reply.count);
+		count = reply.count;
+		if (count < 5) {
+			Arc.send(pong_pid, { text: 'ping', count: count, from: Arc.self() });
+		}
+	}
+}
+
+Arc.log('Done! Final count:', count);
+```
+</CodeGroup>
+
+**Output:**
+```
+pong received: ping from Pid<0.123.0>
+ping received: pong count: 1
+pong received: ping from Pid<0.123.0>
+ping received: pong count: 2
+...
+Done! Final count: 5
+```
+
+## Stateful actors
+
+Actors maintain private state using local variables and message loops:
+
+<CodeGroup>
+```javascript examples/counter_actor.js
+var parent = Arc.self();
+
+var counter = Arc.spawn(() => {
+	var count = 0;  // Private state
+	while (true) {
+		var msg = Arc.receive();
+		if (msg.type === 'inc') {
+			count = count + msg.n;
+			Arc.log('counter: incremented by', msg.n, '-> now', count);
+		}
+		if (msg.type === 'dec') {
+			count = count - msg.n;
+			Arc.log('counter: decremented by', msg.n, '-> now', count);
+		}
+		if (msg.type === 'get') {
+			Arc.send(msg.from, { type: 'value', count: count });
+		}
+		if (msg.type === 'stop') {
+			Arc.log('counter: stopping with final value', count);
+			Arc.send(msg.from, { type: 'stopped', count: count });
+			return;  // Exit the loop to terminate the process
+		}
+	}
+});
+
+Arc.send(counter, { type: 'inc', n: 10 });
+Arc.send(counter, { type: 'inc', n: 5 });
+Arc.send(counter, { type: 'dec', n: 3 });
+Arc.send(counter, { type: 'inc', n: 100 });
+Arc.send(counter, { type: 'get', from: parent });
+
+var result = Arc.receive(1000);
+Arc.log('Main got counter value:', result.count);
+
+Arc.send(counter, { type: 'stop', from: parent });
+var stopped = Arc.receive(1000);
+Arc.log('Counter stopped with:', stopped.count);
+```
+</CodeGroup>
+
+**Output:**
+```
+counter: incremented by 10 -> now 10
+counter: incremented by 5 -> now 15
+counter: decremented by 3 -> now 12
+counter: incremented by 100 -> now 112
+Main got counter value: 112
+counter: stopping with final value 112
+Counter stopped with: 112
+```
+
+<Tip>
+The `count` variable is private to the counter process. The main process can only read it by sending a `get` message.
+</Tip>
+
+## Message serialization
+
+Messages must be **serializable** — only primitive values and plain objects can be sent between processes:
+
+<Tabs>
+  <Tab title="Supported types">
+    - `undefined`, `null`
+    - Booleans, numbers, bigints, strings
+    - Plain objects (enumerable properties only)
+    - Arrays
+    - Symbols
+    - Pids (process IDs)
+  </Tab>
+  
+  <Tab title="Not supported">
+    - Functions
+    - Promises
+    - Map, Set, WeakMap, WeakSet
+    - Objects with non-enumerable properties
+    - Objects with accessor properties (getters/setters)
+    - Circular references
+  </Tab>
+</Tabs>
+
+```javascript
+// OK
+Arc.send(pid, { x: 1, y: [2, 3], z: 'hello' });
+
+// TypeError: cannot send functions between processes
+Arc.send(pid, { fn: () => 42 });
+
+// TypeError: cannot send circular structure between processes
+const obj = {};
+obj.self = obj;
+Arc.send(pid, obj);
+```
+
+<Note>
+Message serialization is implemented in `src/arc/vm/builtins/arc.gleam` using `serialize()` and `deserialize()`. It converts JavaScript values to Erlang terms.
+</Note>
+
+## Ring benchmark
+
+A classic Erlang concurrency demo — pass a token around a ring of N processes:
+
+<CodeGroup>
+```javascript examples/ring.js
+var N = 100; // number of processes in the ring
+var M = 10;  // number of laps around the ring
+
+// Build a ring of N processes. Each one receives a message and
+// forwards it to the next process in the ring.
+var first = Arc.self();
+var prev = first;
+
+var i = N;
+while (i > 0) {
+	var next = prev;
+	prev = Arc.spawn(() => {
+		while (true) {
+			var msg = Arc.receive();
+			if (msg.type === 'stop') {
+				return;
+			}
+			Arc.send(next, { type: 'token', lap: msg.lap, hops: msg.hops + 1 });
+		}
+	});
+	i = i - 1;
+}
+
+Arc.log('Ring of', N, 'processes created. Sending token for', M, 'laps...');
+
+// Send the token into the ring
+Arc.send(prev, { type: 'token', lap: 0, hops: 0 });
+
+// Main process acts as the "first" node — receives and re-sends
+var lap = 0;
+while (lap < M) {
+	var msg = Arc.receive(5000);
+	if (msg === undefined) {
+		Arc.log('Timed out waiting for token!');
+		lap = M;
+	} else {
+		lap = msg.lap + 1;
+		Arc.log('Lap', lap, 'complete -', msg.hops, 'hops');
+		if (lap < M) {
+			Arc.send(prev, { type: 'token', lap: lap, hops: 0 });
+		}
+	}
+}
+
+Arc.log('Done!', N, 'processes x', M, 'laps =', N * M, 'total message passes');
+```
+</CodeGroup>
+
+**Output:**
+```
+Ring of 100 processes created. Sending token for 10 laps...
+Lap 1 complete - 100 hops
+Lap 2 complete - 100 hops
+...
+Lap 10 complete - 100 hops
+Done! 100 processes x 10 laps = 1000 total message passes
+```
+
+This demonstrates spawning many lightweight processes and coordinating them with message passing.
+
+## Arc namespace functions
+
+All actor-related functions are in the `Arc` global:
+
+<ParamField path="Arc.spawn" type="(fn: () => any) => Pid">
+  Spawn a new BEAM process running `fn`. Returns a `Pid` object.
+</ParamField>
+
+<ParamField path="Arc.self" type="() => Pid">
+  Get the current process's `Pid`.
+</ParamField>
+
+<ParamField path="Arc.send" type="(pid: Pid, msg: any) => any">
+  Send a message to `pid`. The message must be serializable. Returns the sent message.
+</ParamField>
+
+<ParamField path="Arc.receive" type="(timeout?: number) => any">
+  Block until a message arrives. If `timeout` (in milliseconds) is provided, returns `undefined` on timeout. Without timeout, blocks forever.
+</ParamField>
+
+<ParamField path="Arc.log" type="(...args: any[]) => void">
+  Print arguments to stdout. Works in any process (unlike `console.log` which may not be available in spawned processes).
+</ParamField>
+
+<ParamField path="Arc.sleep" type="(ms: number) => void">
+  Suspend the current process for `ms` milliseconds.
+</ParamField>
+
+<Note>
+These functions are implemented in `src/arc/vm/builtins/arc.gleam` and use Erlang FFI to interact with the BEAM scheduler.
+</Note>
+
+## Process isolation
+
+Each process has its own heap — no shared memory:
+
+```javascript
+const shared = { count: 0 };
+
+const pid = Arc.spawn(() => {
+  const msg = Arc.receive();
+  msg.count = 100;  // Modifies the RECEIVED copy
+  Arc.log('Child sees:', msg.count);
+});
+
+Arc.send(pid, shared);
+Arc.sleep(100);
+Arc.log('Parent sees:', shared.count);  // Still 0!
+```
+
+**Output:**
+```
+Child sees: 100
+Parent sees: 0
+```
+
+<Warning>
+Messages are **copied** between processes. Modifying a received message does not affect the sender's copy.
+</Warning>
+
+## Timeouts and error handling
+
+`Arc.receive()` with a timeout returns `undefined` if no message arrives:
+
+```javascript
+const msg = Arc.receive(1000);
+if (msg === undefined) {
+  Arc.log('No message received in 1 second');
+} else {
+  Arc.log('Got message:', msg);
+}
+```
+
+<Tip>
+Use timeouts to avoid blocking forever when waiting for messages from processes that may have crashed.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Modules" icon="cube" href="/concepts/modules">
+    Learn how to structure Arc programs with ES modules
+  </Card>
+  
+  <Card title="JavaScript on BEAM" icon="code" href="/concepts/javascript-on-beam">
+    Deep dive into the execution model and value representation
+  </Card>
+</CardGroup>

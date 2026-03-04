@@ -1,0 +1,189 @@
+---
+title: Overview
+description: Understanding Arc's architecture and design philosophy
+---
+
+Arc is a JavaScript runtime that runs on the BEAM VM (Erlang's virtual machine). It brings JavaScript's familiar syntax to Erlang's robust actor model, enabling lightweight concurrency with message-passing semantics.
+
+## What is Arc?
+
+Arc executes JavaScript code as BEAM processes, giving you:
+
+- **Actor-based concurrency** — Spawn thousands of isolated processes, each running JavaScript
+- **Fault tolerance** — Process crashes are isolated and recoverable
+- **ES modules** — Modern import/export syntax with compile-time bundling
+- **REPL** — Interactive development environment with live code evaluation
+
+## Architecture overview
+
+Arc implements a complete JavaScript execution pipeline:
+
+```mermaid
+graph LR
+    A[JavaScript Source] --> B[Parser]
+    B --> C[AST]
+    C --> D[Compiler]
+    D --> E[Bytecode]
+    E --> F[VM]
+    F --> G[BEAM Process]
+```
+
+### Key components
+
+<CardGroup cols={2}>
+  <Card title="Parser" icon="code">
+    Parses JavaScript source into an Abstract Syntax Tree (AST). Supports both Script and Module modes.
+  </Card>
+  
+  <Card title="Compiler" icon="microchip">
+    Three-phase bytecode compiler: emit symbolic operations, resolve variable scopes, then resolve jump addresses.
+  </Card>
+  
+  <Card title="VM" icon="server">
+    Stack-based bytecode interpreter with heap-allocated objects. Executes compiled templates on the BEAM.
+  </Card>
+  
+  <Card title="Builtins" icon="cube">
+    Standard JavaScript globals (Array, Object, Promise, etc.) plus Arc-specific functions for concurrency.
+  </Card>
+</CardGroup>
+
+## Compilation pipeline
+
+The compiler transforms AST into executable bytecode through three phases:
+
+<Steps>
+  <Step title="Phase 1: Emit">
+    Convert AST to symbolic EmitterOp instructions with variable names and label IDs.
+  </Step>
+  
+  <Step title="Phase 2: Scope">
+    Resolve variable names to local indices and collect captured variables for closures.
+  </Step>
+  
+  <Step title="Phase 3: Resolve">
+    Replace label IDs with absolute bytecode addresses for jumps and branches.
+  </Step>
+</Steps>
+
+The result is a `FuncTemplate` containing:
+
+- Bytecode operations (array of `Op`)
+- Constant pool (literals, strings, numbers)
+- Nested function templates (closures, arrow functions)
+- Metadata (parameter count, strict mode, async/generator flags)
+
+<Note>
+All compilation happens ahead-of-time. The VM never sees source code or AST — only bytecode.
+</Note>
+
+## JavaScript on Erlang
+
+Arc bridges two worlds:
+
+<CodeGroup>
+```javascript JavaScript semantics
+// JavaScript values and operations
+const obj = { x: 1 };
+const arr = [1, 2, 3];
+const fn = (x) => x + 1;
+```
+
+```gleam Erlang implementation (src/arc/vm/value.gleam)
+pub type JsValue {
+  JsUndefined
+  JsNull
+  JsBool(Bool)
+  JsNumber(JsNum)
+  JsString(String)
+  JsBigInt(JsBigInt)
+  JsSymbol(SymbolId)
+  JsObject(Ref)
+  JsUninitialized
+}
+```
+</CodeGroup>
+
+### Heap management
+
+All JavaScript objects live on Arc's **heap** — an immutable dictionary arena with garbage collection:
+
+```gleam
+// From src/arc/vm/heap.gleam
+pub opaque type Heap {
+  Heap(
+    data: dict.Dict(Int, HeapSlot),  // Object storage
+    free: List(Int),                 // Recycled IDs
+    next: Int,                       // Next allocation ID
+    roots: Set(Int),                 // GC roots
+  )
+}
+```
+
+Objects are stored by reference (`Ref(id)`) and retrieved via `heap.read()`. The heap is immutable — every mutation returns a new heap instance.
+
+## REPL and module execution
+
+Arc supports two execution modes:
+
+### REPL mode
+
+Interactive evaluation with persistent state:
+
+```bash
+arc
+> const x = 10
+> x * 2
+20
+> /help  # Built-in commands
+```
+
+Top-level `var`/`let`/`const` declarations create global bindings that persist across evaluations.
+
+### Module execution
+
+Run ES modules from files:
+
+```bash
+arc examples/counter_actor.js
+```
+
+Modules use the two-phase lifecycle:
+
+1. **Compile bundle** — Parse and compile all dependencies into a `ModuleBundle`
+2. **Evaluate bundle** — Execute modules in dependency order, link imports/exports
+
+<Tip>
+The `ModuleBundle` is a pure Erlang term, serializable with `term_to_binary`. You can precompile modules and load them later without parsing.
+</Tip>
+
+## Arc namespace
+
+The `Arc` global provides concurrency primitives:
+
+```javascript
+Arc.spawn(fn)        // Spawn a new BEAM process
+Arc.send(pid, msg)   // Send a message to a process
+Arc.receive(timeout) // Block waiting for a message
+Arc.self()           // Get current process ID
+Arc.log(...args)     // Print to stdout (works in any process)
+Arc.sleep(ms)        // Sleep current process
+```
+
+These functions bridge JavaScript code to the BEAM's actor model.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="JavaScript on BEAM" icon="code" href="/concepts/javascript-on-beam">
+    Deep dive into the execution model and compilation pipeline
+  </Card>
+  
+  <Card title="Actor model" icon="users" href="/concepts/actor-model">
+    Learn actor-based concurrency with Arc.spawn, send, and receive
+  </Card>
+  
+  <Card title="Modules" icon="cube" href="/concepts/modules">
+    ES module system and import/export mechanics
+  </Card>
+</CardGroup>

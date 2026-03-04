@@ -1,0 +1,342 @@
+---
+title: Arc namespace
+description: BEAM-specific concurrency primitives for spawning processes, sending messages, and managing actor-based concurrency
+---
+
+The `Arc` namespace provides BEAM-specific concurrency primitives that enable Erlang-style actor programming in JavaScript. These functions allow you to spawn lightweight processes, send and receive messages between processes, and leverage the full power of the BEAM VM's concurrency model.
+
+## Arc.spawn()
+
+Spawns a new BEAM process running the provided function. Returns a `Pid` object representing the spawned process.
+
+<ParamField path="fn" type="function" required>
+  The function to execute in the new process. The function runs in complete isolation with its own heap and call stack.
+</ParamField>
+
+**Returns:** `Pid` - A process identifier object that can be used with `Arc.send()` to communicate with the spawned process.
+
+```javascript
+const worker = Arc.spawn(() => {
+  const message = Arc.receive();
+  Arc.log('Worker received:', message);
+});
+
+Arc.send(worker, 'Hello from main!');
+```
+
+<Tip>
+Spawned processes are extremely lightweight on the BEAM VM. You can easily spawn thousands or even millions of concurrent processes without significant overhead.
+</Tip>
+
+### Actor pattern example
+
+The classic actor pattern using `Arc.spawn()` for stateful concurrent processes:
+
+```javascript counter_actor.js
+// A counter actor — a stateful process that responds to messages
+var parent = Arc.self();
+
+var counter = Arc.spawn(() => {
+  var count = 0;
+  while (true) {
+    var msg = Arc.receive();
+    if (msg.type === 'inc') {
+      count = count + msg.n;
+      Arc.log('counter: incremented by', msg.n, '-> now', count);
+    }
+    if (msg.type === 'dec') {
+      count = count - msg.n;
+      Arc.log('counter: decremented by', msg.n, '-> now', count);
+    }
+    if (msg.type === 'get') {
+      Arc.send(msg.from, { type: 'value', count: count });
+    }
+    if (msg.type === 'stop') {
+      Arc.log('counter: stopping with final value', count);
+      Arc.send(msg.from, { type: 'stopped', count: count });
+      return;
+    }
+  }
+});
+
+Arc.send(counter, { type: 'inc', n: 10 });
+Arc.send(counter, { type: 'dec', n: 3 });
+Arc.send(counter, { type: 'get', from: parent });
+
+var result = Arc.receive(1000);
+Arc.log('Counter value:', result.count);
+```
+
+---
+
+## Arc.send()
+
+Sends a message to a BEAM process. Messages are serialized into a portable format for cross-process transfer.
+
+<ParamField path="pid" type="Pid" required>
+  The process identifier to send the message to. Must be a `Pid` object returned from `Arc.spawn()` or `Arc.self()`.
+</ParamField>
+
+<ParamField path="message" type="any">
+  The message to send. Supports primitives, plain objects, arrays, and PIDs. Functions, promises, and special objects cannot be serialized.
+</ParamField>
+
+**Returns:** The sent message value.
+
+**Throws:** `TypeError` if `pid` is not a Pid or if `message` contains non-serializable values.
+
+```javascript
+const worker = Arc.spawn(() => {
+  const msg = Arc.receive();
+  Arc.log('Got:', msg.text, 'from', msg.from);
+});
+
+Arc.send(worker, {
+  text: 'Hello',
+  from: Arc.self(),
+  data: [1, 2, 3]
+});
+```
+
+### Serialization rules
+
+<CardGroup cols={2}>
+  <Card title="Supported types" icon="check">
+    - Primitives: `undefined`, `null`, `boolean`, `number`, `string`, `bigint`, `symbol`
+    - Plain objects and arrays
+    - `Pid` objects
+  </Card>
+  
+  <Card title="Unsupported types" icon="xmark">
+    - Functions
+    - Promises
+    - Special objects (Date, RegExp, Map, Set)
+    - Circular references
+    - Non-enumerable properties
+  </Card>
+</CardGroup>
+
+<Warning>
+Attempting to send non-serializable values will throw a `TypeError` with a descriptive error message.
+</Warning>
+
+---
+
+## Arc.receive()
+
+Blocks the current BEAM process waiting for a message. Returns the received message or `undefined` on timeout.
+
+<ParamField path="timeout" type="number">
+  Optional timeout in milliseconds. If provided, returns `undefined` when the timeout expires. Without a timeout, blocks indefinitely until a message arrives.
+</ParamField>
+
+**Returns:** The received message, or `undefined` if the timeout expired.
+
+<CodeGroup>
+
+```javascript Blocking receive
+const worker = Arc.spawn(() => {
+  // Block forever until a message arrives
+  const message = Arc.receive();
+  Arc.log('Received:', message);
+});
+```
+
+```javascript Receive with timeout
+const worker = Arc.spawn(() => {
+  // Wait up to 5 seconds for a message
+  const message = Arc.receive(5000);
+  
+  if (message === undefined) {
+    Arc.log('Timed out waiting for message');
+  } else {
+    Arc.log('Received:', message);
+  }
+});
+```
+
+</CodeGroup>
+
+### Ping-pong example
+
+```javascript ping_pong.js
+// Classic Erlang ping-pong between two processes
+var pong_pid = Arc.spawn(() => {
+  while (true) {
+    var msg = Arc.receive();
+    Arc.log('pong received:', msg.text, 'from', msg.from);
+    Arc.send(msg.from, { text: 'pong', count: msg.count + 1, from: Arc.self() });
+    if (msg.count >= 5) {
+      return;
+    }
+  }
+});
+
+// Ping loop in the main process
+var count = 0;
+Arc.send(pong_pid, { text: 'ping', count: count, from: Arc.self() });
+
+while (count < 5) {
+  var reply = Arc.receive(2000);
+  if (reply === undefined) {
+    Arc.log('Timed out!');
+    break;
+  } else {
+    Arc.log('ping received:', reply.text, 'count:', reply.count);
+    count = reply.count;
+    if (count < 5) {
+      Arc.send(pong_pid, { text: 'ping', count: count, from: Arc.self() });
+    }
+  }
+}
+```
+
+---
+
+## Arc.self()
+
+Returns a `Pid` object representing the current BEAM process.
+
+**Returns:** `Pid` - The process identifier for the currently executing process.
+
+```javascript
+const myPid = Arc.self();
+Arc.log('My process ID:', myPid);
+
+// Send the pid to another process
+const worker = Arc.spawn(() => {
+  const msg = Arc.receive();
+  Arc.send(msg.replyTo, 'Message processed!');
+});
+
+Arc.send(worker, { data: 'test', replyTo: Arc.self() });
+const reply = Arc.receive(1000);
+```
+
+<Note>
+Each process has a unique `Pid` that can be sent in messages, enabling reply patterns and process supervision.
+</Note>
+
+---
+
+## Arc.log()
+
+Prints values to stdout, space-separated, with a newline. Similar to `console.log` but available in all spawned processes.
+
+<ParamField path="...args" type="any">
+  Values to print. Multiple arguments are joined with spaces. All JavaScript types are supported.
+</ParamField>
+
+**Returns:** `undefined`
+
+```javascript
+Arc.log('Hello', 'world');  // Hello world
+Arc.log('Count:', 42);      // Count: 42
+Arc.log({ x: 1, y: 2 });    // [object Object]
+Arc.log([1, 2, 3]);         // 1,2,3
+```
+
+<Info>
+Unlike `console.log`, `Arc.log()` is available in spawned processes where the `console` global may not be defined.
+</Info>
+
+---
+
+## Arc.sleep()
+
+Suspends the current BEAM process for the specified number of milliseconds. Maps directly to Erlang's `timer:sleep/1`.
+
+<ParamField path="ms" type="number" required>
+  The number of milliseconds to sleep. Must be a positive integer. Values less than or equal to 0 are treated as no-op.
+</ParamField>
+
+**Returns:** `undefined`
+
+```javascript
+Arc.log('Starting work...');
+Arc.sleep(2000);  // Sleep for 2 seconds
+Arc.log('Work complete!');
+```
+
+<CodeGroup>
+
+```javascript Delayed execution
+const worker = Arc.spawn(() => {
+  Arc.sleep(1000);
+  Arc.log('This prints after 1 second');
+});
+```
+
+```javascript Rate limiting
+for (let i = 0; i < 5; i++) {
+  Arc.log('Iteration:', i);
+  Arc.sleep(500);  // Wait 500ms between iterations
+}
+```
+
+</CodeGroup>
+
+---
+
+## Arc.peek()
+
+<Warning>
+Non-standard API. Not part of ECMAScript specification.
+</Warning>
+
+Inspects the internal state of a Promise without affecting it. Returns an object describing the promise state.
+
+<ParamField path="promise" type="Promise" required>
+  The promise object to inspect.
+</ParamField>
+
+**Returns:** An object with one of the following shapes:
+
+<ResponseField name="type" type="string">
+  Promise state: `"pending"`, `"resolved"`, or `"rejected"`
+</ResponseField>
+
+<ResponseField name="value" type="any">
+  Present when `type` is `"resolved"`. The fulfillment value.
+</ResponseField>
+
+<ResponseField name="reason" type="any">
+  Present when `type` is `"rejected"`. The rejection reason.
+</ResponseField>
+
+**Throws:** `TypeError` if the argument is not a Promise.
+
+```javascript
+const p1 = Promise.resolve(42);
+Arc.log(Arc.peek(p1));
+// { type: 'resolved', value: 42 }
+
+const p2 = Promise.reject(new Error('failed'));
+Arc.log(Arc.peek(p2));
+// { type: 'rejected', reason: Error('failed') }
+
+const p3 = new Promise(() => {});
+Arc.log(Arc.peek(p3));
+// { type: 'pending' }
+```
+
+---
+
+## Pid object
+
+Process identifier objects are returned by `Arc.spawn()` and `Arc.self()`. They can be sent in messages and used as identifiers for process communication.
+
+### Pid.prototype.toString()
+
+Returns a string representation of the process ID in Erlang format.
+
+**Returns:** `string` - Process ID in the format `"Pid<X.Y.Z>"`
+
+```javascript
+const pid = Arc.self();
+Arc.log(pid.toString());  // Pid<0.83.0>
+```
+
+<Note>
+The `toString()` method is automatically called when converting a Pid to a string.
+</Note>

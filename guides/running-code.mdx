@@ -1,0 +1,169 @@
+---
+title: Running JavaScript code
+description: Learn how to run JavaScript files with Arc and use different execution modes
+---
+
+Arc can run JavaScript files directly from the command line, supporting both script mode and ES module mode. This guide covers all the ways you can execute JavaScript code with Arc.
+
+## Running files
+
+The most basic way to run JavaScript with Arc is to pass a file path as an argument:
+
+```bash
+arc path/to/your-file.js
+```
+
+Arc will automatically determine the execution mode based on the file extension.
+
+### Script mode vs module mode
+
+Arc supports two execution modes:
+
+<AccordionGroup>
+  <Accordion title="Script mode (.cjs files)">
+    Script mode is the traditional JavaScript execution model where code runs in the global scope. Use `.cjs` extension for script mode:
+
+    ```bash
+    arc examples/simple.cjs
+    ```
+
+    In script mode:
+    - All code runs in the global scope
+    - No `import`/`export` statements allowed
+    - Variables declared with `var` become global properties
+    - Suitable for simple scripts and one-off programs
+  </Accordion>
+
+  <Accordion title="Module mode (.js and .mjs files)">
+    Module mode follows the ES modules specification. Any file with `.js` or `.mjs` extension runs as a module:
+
+    ```bash
+    arc examples/program.js
+    arc examples/program.mjs
+    ```
+
+    In module mode:
+    - Code runs in module scope (not global)
+    - `import` and `export` statements are supported
+    - Top-level `await` is allowed
+    - Recommended for most applications
+  </Accordion>
+</AccordionGroup>
+
+## One-liner evaluation with -p flag
+
+You can execute JavaScript expressions directly from the command line using the `-p` flag:
+
+```bash
+arc -p "console.log('Hello from Arc')"
+```
+
+The `-p` flag is useful for:
+- Quick calculations
+- Testing Arc features
+- Shell scripting
+- Debugging snippets
+
+<CodeGroup>
+```bash Math calculations
+arc -p "Math.sqrt(144)"
+```
+
+```bash Array operations
+arc -p "[1, 2, 3].map(x => x * 2)"
+```
+
+```bash JSON formatting
+arc -p "JSON.stringify({ name: 'Arc', platform: 'BEAM' }, null, 2)"
+```
+</CodeGroup>
+
+## Running the example programs
+
+Arc includes several example programs that demonstrate different features. Here's how to run them:
+
+### Basic actor example
+
+The `simple.js` example shows the fundamentals of spawning processes and sending messages:
+
+```javascript examples/simple.js
+const pid = Arc.spawn(() => {
+	const message = Arc.receive();
+	Arc.log(message);
+	Arc.log(`${Arc.self()}: Hello from child`);
+});
+
+Arc.send(pid, `${Arc.self()}: Hello from main`);
+```
+
+Run it with:
+
+```bash
+arc examples/simple.js
+```
+
+<Note>
+  All `.js` files in the examples directory run as ES modules by default. To run them in script mode, rename them to `.cjs`.
+</Note>
+
+### Output and errors
+
+When you run a JavaScript file:
+
+<Steps>
+  <Step title="Arc parses the file">
+    The JavaScript code is parsed into an abstract syntax tree (AST). Syntax errors are reported immediately:
+
+    ```
+    SyntaxError: Unexpected token '}'
+    ```
+  </Step>
+
+  <Step title="Arc compiles to bytecode">
+    The AST is compiled into bytecode instructions for the Arc VM. Compilation errors are caught here:
+
+    ```
+    compile error: unsupported feature
+    ```
+  </Step>
+
+  <Step title="The VM executes the code">
+    The bytecode runs on the BEAM VM. Runtime errors and exceptions appear as:
+
+    ```
+    Uncaught exception: ReferenceError: foo is not defined
+    ```
+  </Step>
+</Steps>
+
+## Command-line interface
+
+Here's the complete Arc CLI syntax:
+
+```bash
+# Start interactive REPL
+arc
+
+# Run a JavaScript file
+arc <file.js>
+
+# Evaluate an expression
+arc -p <expression>
+```
+
+<Note>
+  Arc does not pass command-line arguments to your JavaScript programs yet. This feature is planned for a future release.
+</Note>
+
+## What's next?
+
+Now that you know how to run JavaScript files, explore these guides:
+
+<CardGroup cols={2}>
+  <Card title="Using the REPL" icon="terminal" href="/guides/using-repl">
+    Interactive JavaScript development
+  </Card>
+  <Card title="Actor programming" icon="bolt" href="/guides/actor-programming">
+    Writing concurrent programs
+  </Card>
+</CardGroup>

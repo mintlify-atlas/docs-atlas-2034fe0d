@@ -1,0 +1,400 @@
+---
+title: Actor programming
+description: Build concurrent programs with Arc's actor model, powered by the BEAM VM
+---
+
+Arc brings Erlang's legendary actor model to JavaScript. Actors are lightweight processes that communicate through message passing, enabling you to write highly concurrent, fault-tolerant programs.
+
+## What are actors?
+
+An actor is an independent process with:
+- **Private state** that no other process can access
+- **A mailbox** for receiving messages
+- **The ability to spawn** new actors
+- **Message passing** as the only way to communicate
+
+This model is the foundation of Erlang/OTP and powers systems handling millions of concurrent connections.
+
+## Your first actor
+
+Let's start with a simple example from Arc's `examples/simple.js`:
+
+```javascript examples/simple.js
+const pid = Arc.spawn(() => {
+	const message = Arc.receive();
+	Arc.log(message);
+	Arc.log(`${Arc.self()}: Hello from child`);
+});
+
+Arc.send(pid, `${Arc.self()}: Hello from main`);
+```
+
+<Steps>
+  <Step title="Spawn a new process">
+    `Arc.spawn()` creates a new BEAM process and returns its process ID (Pid):
+
+    ```javascript
+    const pid = Arc.spawn(() => {
+      // This code runs in a separate process
+    });
+    ```
+  </Step>
+
+  <Step title="Receive a message">
+    Inside the spawned process, `Arc.receive()` blocks until a message arrives:
+
+    ```javascript
+    const message = Arc.receive();
+    ```
+  </Step>
+
+  <Step title="Send a message">
+    From the main process, send a message to the child using its Pid:
+
+    ```javascript
+    Arc.send(pid, "Hello!");
+    ```
+  </Step>
+</Steps>
+
+Run this example:
+
+```bash
+arc examples/simple.js
+```
+
+## The Arc actor API
+
+Arc provides five core primitives for actor-based concurrency:
+
+### Arc.spawn(fn)
+
+Spawns a new process and returns its Pid:
+
+```javascript
+const worker = Arc.spawn(() => {
+  // Process code here
+});
+```
+
+- The function runs in a **new process** on the BEAM scheduler
+- The parent and child have **separate memory** (copy-on-spawn)
+- When the function returns, the process terminates
+
+### Arc.self()
+
+Returns the current process's Pid:
+
+```javascript
+const myPid = Arc.self();
+Arc.log(`I am process ${myPid}`);
+```
+
+Useful for sending your Pid to other processes so they can reply.
+
+### Arc.send(pid, message)
+
+Sends a message to another process:
+
+```javascript
+Arc.send(worker, { type: "work", data: [1, 2, 3] });
+```
+
+- **Asynchronous**: Returns immediately without waiting
+- **Any value**: Send strings, numbers, objects, arrays
+- **No shared memory**: The message is deep-copied
+
+### Arc.receive(timeout?)
+
+Receives a message from the current process's mailbox:
+
+```javascript
+const msg = Arc.receive();      // Block forever
+const msg = Arc.receive(1000);  // Timeout after 1 second
+```
+
+- **Blocks** until a message arrives or timeout expires
+- **FIFO order**: Messages are received in the order they were sent
+- **Returns undefined** on timeout
+
+### Arc.log(...values)
+
+Logs values to the console (works across processes):
+
+```javascript
+Arc.log("Count:", 42, "Active:", true);
+```
+
+Unlike `console.log`, this works reliably in concurrent contexts.
+
+## Building a stateful actor
+
+The most common pattern is an actor with a **message loop** that maintains private state. Here's `examples/counter_actor.js`:
+
+```javascript examples/counter_actor.js
+var parent = Arc.self();
+
+var counter = Arc.spawn(() => {
+	var count = 0;
+	while (true) {
+		var msg = Arc.receive();
+		if (msg.type === 'inc') {
+			count = count + msg.n;
+			Arc.log('counter: incremented by', msg.n, '-> now', count);
+		}
+		if (msg.type === 'dec') {
+			count = count - msg.n;
+			Arc.log('counter: decremented by', msg.n, '-> now', count);
+		}
+		if (msg.type === 'get') {
+			Arc.send(msg.from, { type: 'value', count: count });
+		}
+		if (msg.type === 'stop') {
+			Arc.log('counter: stopping with final value', count);
+			Arc.send(msg.from, { type: 'stopped', count: count });
+			return;
+		}
+	}
+});
+
+Arc.send(counter, { type: 'inc', n: 10 });
+Arc.send(counter, { type: 'inc', n: 5 });
+Arc.send(counter, { type: 'dec', n: 3 });
+Arc.send(counter, { type: 'inc', n: 100 });
+Arc.send(counter, { type: 'get', from: parent });
+
+var result = Arc.receive(1000);
+Arc.log('Main got counter value:', result.count);
+
+Arc.send(counter, { type: 'stop', from: parent });
+var stopped = Arc.receive(1000);
+Arc.log('Counter stopped with:', stopped.count);
+```
+
+<Accordion title="Understanding the counter actor pattern">
+This pattern appears everywhere in Erlang/OTP:
+
+1. **Spawn** an actor that loops forever
+2. **Maintain state** in local variables (`count`)
+3. **Receive messages** and pattern-match on type
+4. **Update state** based on the message
+5. **Send replies** when requested
+6. **Exit** the loop to terminate
+
+The key insight: `count` is **private**. Only the counter process can modify it. Other processes must send messages to interact with it.
+</Accordion>
+
+Run the counter:
+
+```bash
+arc examples/counter_actor.js
+```
+
+Output:
+```
+counter: incremented by 10 -> now 10
+counter: incremented by 5 -> now 15
+counter: decremented by 3 -> now 12
+counter: incremented by 100 -> now 112
+Main got counter value: 112
+counter: stopping with final value 112
+Counter stopped with: 112
+```
+
+## Message passing patterns
+
+### Request-reply pattern
+
+Send your Pid in the message so the actor can reply:
+
+```javascript
+const parent = Arc.self();
+Arc.send(worker, { type: "query", from: parent, id: 123 });
+const reply = Arc.receive(5000);
+```
+
+### Ping-pong pattern
+
+Two processes exchanging messages. From `examples/ping_pong.js`:
+
+```javascript examples/ping_pong.js
+var pong_pid = Arc.spawn(() => {
+	while (true) {
+		var msg = Arc.receive();
+		Arc.log('pong received:', msg.text, 'from', msg.from);
+		Arc.send(msg.from, { text: 'pong', count: msg.count + 1, from: Arc.self() });
+		if (msg.count >= 5) {
+			return;
+		}
+	}
+});
+
+// Ping loop in the main process
+var count = 0;
+Arc.send(pong_pid, { text: 'ping', count: count, from: Arc.self() });
+
+while (count < 5) {
+	var reply = Arc.receive(2000);
+	if (reply === undefined) {
+		Arc.log('Timed out!');
+		count = 999;
+	} else {
+		Arc.log('ping received:', reply.text, 'count:', reply.count);
+		count = reply.count;
+		if (count < 5) {
+			Arc.send(pong_pid, { text: 'ping', count: count, from: Arc.self() });
+		}
+	}
+}
+```
+
+### Process ring pattern
+
+Pass messages through a ring of processes. From `examples/ring.js`:
+
+```javascript examples/ring.js (simplified)
+var N = 100; // number of processes in the ring
+var M = 10; // number of laps around the ring
+
+// Build a ring of N processes
+var first = Arc.self();
+var prev = first;
+
+var i = N;
+while (i > 0) {
+	var next = prev;
+	prev = Arc.spawn(() => {
+		while (true) {
+			var msg = Arc.receive();
+			if (msg.type === 'stop') {
+				return;
+			}
+			Arc.send(next, { type: 'token', lap: msg.lap, hops: msg.hops + 1 });
+		}
+	});
+	i = i - 1;
+}
+
+// Send the token into the ring
+Arc.send(prev, { type: 'token', lap: 0, hops: 0 });
+```
+
+This creates 100 processes and passes a message around the ring 10 times — a classic Erlang benchmark demonstrating lightweight process creation.
+
+## Concurrency in action
+
+Processes run **truly concurrently** on the BEAM scheduler. Here's `examples/concurrent.js`:
+
+```javascript examples/concurrent.js
+function run(name, delay) {
+	Arc.log(Arc.self(), 'is starting');
+	let i = 1;
+	while (true) {
+		Arc.log(`${name} tick`, i);
+		i = i + 1;
+		Arc.sleep(delay);
+	}
+}
+
+Arc.spawn(() => run('[Process A]', 50));
+Arc.spawn(() => run('    [Process B]', 200));
+
+Arc.log('  [Main] sleeping... watch A and B interleave!');
+Arc.sleep(800);
+Arc.log('  [Main] Done!');
+```
+
+Run it:
+
+```bash
+arc examples/concurrent.js
+```
+
+You'll see the BEAM interleaving Process A and Process B in real-time — each running on its own scheduler, with different sleep intervals.
+
+## Memory isolation and mutability
+
+Every spawned process gets **its own copy** of the JavaScript VM state. Changes in one process don't affect others. From `examples/mutability.js`:
+
+```javascript examples/mutability.js
+let i = 0;
+const main = Arc.self();
+
+Arc.spawn(() => {
+	i = 10;
+	Arc.log(Arc.self(), 'I set `i` to', i);
+	Arc.send(main); // sends undefined
+});
+
+Arc.log(main, 'but I see that `i` is', i);
+```
+
+Output:
+```
+Pid<0.124.0> I set `i` to 10
+Pid<0.123.0> but I see that `i` is 0
+```
+
+<Warning>
+  Each process has its own heap. Spawning copies the VM state, so mutating variables in a child process doesn't affect the parent.
+</Warning>
+
+This is different from JavaScript threads or workers — Arc actors are **true processes** with isolated memory, not shared-memory threads.
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Design actors around state" icon="database">
+    Each actor should own a piece of state and provide a message-based API to interact with it.
+  </Card>
+
+  <Card title="Always use timeouts" icon="clock">
+    Call `Arc.receive(timeout)` with a timeout to avoid blocking forever if a message never arrives.
+  </Card>
+
+  <Card title="Include reply addresses" icon="reply">
+    Pass `Arc.self()` in messages so actors can send replies back to the caller.
+  </Card>
+
+  <Card title="Use message types" icon="tag">
+    Structure messages with a `type` field to pattern-match on message intent.
+  </Card>
+</CardGroup>
+
+## Advanced pattern: Supervised actors
+
+<Note>
+  Supervision trees and fault tolerance features are planned for future Arc releases. For now, actors don't automatically restart on crash.
+</Note>
+
+In Erlang/OTP, actors are organized into **supervision trees** where supervisors automatically restart crashed workers. Arc will support this pattern in the future, bringing Erlang's "let it crash" philosophy to JavaScript.
+
+## Example programs to explore
+
+Arc includes several complete examples:
+
+| Example | Description |
+|---------|-------------|
+| `simple.js` | Basic spawn, send, receive |
+| `counter_actor.js` | Stateful actor with message loop |
+| `ping_pong.js` | Two processes exchanging messages |
+| `ring.js` | 100 processes in a ring (concurrency benchmark) |
+| `concurrent.js` | Visualize BEAM scheduling with `Arc.sleep()` |
+| `mutability.js` | Demonstrate process memory isolation |
+
+Run any example:
+
+```bash
+arc examples/<name>.js
+```
+
+## What's next?
+
+<CardGroup cols={2}>
+  <Card title="Module system" icon="cube" href="/guides/module-system">
+    Organize code with ES modules
+  </Card>
+  <Card title="Using the REPL" icon="terminal" href="/guides/using-repl">
+    Interactive actor experiments
+  </Card>
+</CardGroup>

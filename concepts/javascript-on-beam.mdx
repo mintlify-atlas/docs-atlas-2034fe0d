@@ -1,0 +1,405 @@
+---
+title: JavaScript on BEAM
+description: How JavaScript code executes on Erlang's virtual machine
+---
+
+Arc compiles JavaScript to bytecode and executes it on the BEAM VM. This page explains the execution model, compilation pipeline, and how JavaScript values are represented in Erlang.
+
+## Execution model
+
+Every JavaScript program in Arc runs as a BEAM process:
+
+```javascript
+// This entire file executes in one BEAM process
+const x = 10;
+console.log(x * 2);
+
+// Arc.spawn creates a NEW BEAM process
+const pid = Arc.spawn(() => {
+  // This code runs in a different process
+  Arc.log('Hello from child');
+});
+```
+
+<Info>
+Each process has its own heap, stack, and execution context. Processes communicate only through message passing — they share nothing.
+</Info>
+
+## Compilation pipeline
+
+Arc transforms JavaScript source through multiple stages before execution:
+
+### Phase 1: Parsing
+
+The parser (`src/arc/parser.gleam`) converts source text into an Abstract Syntax Tree:
+
+```javascript
+const x = 10;
+x * 2
+```
+
+Becomes:
+
+```gleam
+Script([
+  VariableDeclaration(
+    kind: Const,
+    declarations: [
+      VariableDeclarator(id: Identifier("x"), init: Some(Literal(Number(10.0))))
+    ]
+  ),
+  ExpressionStatement(
+    BinaryExpression(left: Identifier("x"), operator: Multiply, right: Literal(Number(2.0)))
+  )
+])
+```
+
+### Phase 2: Compilation
+
+The compiler (`src/arc/compiler.gleam`) converts AST to bytecode through three sub-phases:
+
+<Steps>
+  <Step title="Emit (AST → EmitterOp)">
+    Generate symbolic operations with variable names:
+    ```gleam
+    DeclareLocal("x")
+    PushConst(Number(10.0))
+    PutLocal("x")
+    GetLocal("x")
+    PushConst(Number(2.0))
+    BinOp(Multiply)
+    ```
+  </Step>
+  
+  <Step title="Scope (EmitterOp → IrOp)">
+    Resolve variable names to local slot indices:
+    ```gleam
+    // x is allocated to local slot 0
+    PushConst(0)  // index into constant pool
+    PutLocal(0)   // store to local[0]
+    GetLocal(0)   // load from local[0]
+    PushConst(1)
+    BinOp(Multiply)
+    ```
+  </Step>
+  
+  <Step title="Resolve (IrOp → Op)">
+    Replace label IDs with absolute addresses for jumps:
+    ```gleam
+    // Labels become concrete program counter (PC) values
+    Jump(25)        // not Jump(label_id: 3)
+    JumpIfFalse(42) // absolute bytecode address
+    ```
+  </Step>
+</Steps>
+
+The result is a `FuncTemplate`:
+
+```gleam
+// From src/arc/vm/value.gleam
+pub type FuncTemplate {
+  FuncTemplate(
+    ops: List(Op),              // Bytecode operations
+    constants: List(JsValue),   // Constant pool
+    local_count: Int,           // Local variable slots needed
+    child_templates: List(FuncTemplate), // Nested functions
+    parameter_count: Int,
+    is_strict: Bool,
+    is_arrow: Bool,
+    is_async: Bool,
+    is_generator: Bool,
+  )
+}
+```
+
+### Phase 3: Execution
+
+The VM (`src/arc/vm/vm.gleam`) is a stack-based bytecode interpreter:
+
+```gleam
+// Simplified VM loop (from src/arc/vm/vm.gleam)
+fn run_loop(state: State) -> Result(Completion, VmError) {
+  case state.pc >= list.length(state.ops) {
+    True -> Ok(NormalCompletion(state.accumulator, state.heap))
+    False -> {
+      let assert [op, ..] = list.drop(state.ops, state.pc)
+      case execute_op(op, state) {
+        Ok(new_state) -> run_loop(new_state)
+        Error(err) -> Error(err)
+      }
+    }
+  }
+}
+```
+
+<Note>
+The VM never sees source code or AST. All compilation happens ahead-of-time — even in the REPL.
+</Note>
+
+## Value representation
+
+JavaScript values map to Erlang/Gleam types:
+
+<Tabs>
+  <Tab title="Primitives">
+    ```gleam
+    pub type JsValue {
+      JsUndefined
+      JsNull
+      JsBool(Bool)
+      JsNumber(JsNum)      // IEEE 754 float + NaN/Infinity
+      JsString(String)
+      JsBigInt(JsBigInt)   // Arbitrary precision integer
+      JsSymbol(SymbolId)   // Unique symbol ID
+      JsObject(Ref)        // Heap reference
+      JsUninitialized      // TDZ for let/const
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Numbers">
+    ```gleam
+    pub type JsNum {
+      Finite(Float)    // Normal IEEE 754 value
+      NaN
+      Infinity
+      NegInfinity
+    }
+    ```
+    
+    Numbers are immediate values (not heap-allocated).
+  </Tab>
+  
+  <Tab title="Objects">
+    ```gleam
+    pub type ObjectSlot {
+      ObjectSlot(
+        kind: ObjectKind,                          // Array, Function, Promise, etc.
+        properties: Dict(String, Property),        // Named properties
+        elements: JsElements,                      // Array elements (dense)
+        prototype: Option(Ref),                    // [[Prototype]] link
+        symbol_properties: Dict(SymbolId, Property),
+        extensible: Bool,
+      )
+    }
+    ```
+    
+    Objects are heap-allocated and accessed by `Ref(id)`.
+  </Tab>
+</Tabs>
+
+## Heap management
+
+The heap is an immutable dictionary arena:
+
+```gleam
+// From src/arc/vm/heap.gleam
+pub opaque type Heap {
+  Heap(
+    data: dict.Dict(Int, HeapSlot),  // Slot storage
+    free: List(Int),                 // Free list for recycling IDs
+    next: Int,                       // Next fresh ID
+    roots: Set(Int),                 // GC roots (globals, builtins)
+  )
+}
+```
+
+### Allocating objects
+
+Every object allocation returns a new heap:
+
+```gleam
+let #(heap, obj_ref) = heap.alloc(heap, ObjectSlot(
+  kind: OrdinaryObject,
+  properties: dict.from_list([("x", data_property(JsNumber(Finite(42.0))))),
+  elements: js_elements.new(),
+  prototype: Some(object_proto),
+  symbol_properties: dict.new(),
+  extensible: True,
+))
+```
+
+The heap is immutable — `alloc` returns a **new** heap with the object added. The VM threads the heap through every operation.
+
+### Reading objects
+
+```gleam
+case heap.read(heap, obj_ref) {
+  Some(ObjectSlot(properties:, ..)) -> {
+    // Access properties
+    case dict.get(properties, "x") {
+      Ok(DataProperty(value: val, ..)) -> val
+      _ -> JsUndefined
+    }
+  }
+  None -> JsUndefined  // Dangling reference
+}
+```
+
+<Warning>
+References (`Ref(id)`) are just integers. They become "dangling" if the object is garbage collected or never allocated.
+</Warning>
+
+## Stack machine operations
+
+The VM maintains an operand stack for expression evaluation:
+
+```javascript
+x * 2 + 3
+```
+
+Compiles to:
+
+```gleam
+GetLocal(0)      // push x
+PushConst(1)     // push 2.0
+BinOp(Mul)       // pop 2 values, push result
+PushConst(2)     // push 3.0
+BinOp(Add)       // pop 2 values, push result
+```
+
+Stack state during execution:
+
+| Instruction | Stack |
+|-------------|-------|
+| `GetLocal(0)` | `[10.0]` |
+| `PushConst(1)` | `[10.0, 2.0]` |
+| `BinOp(Mul)` | `[20.0]` |
+| `PushConst(2)` | `[20.0, 3.0]` |
+| `BinOp(Add)` | `[23.0]` |
+
+<Tip>
+The accumulator register holds the top-of-stack value. Many operations push to the stack or pop into the accumulator.
+</Tip>
+
+## Function calls and closures
+
+Function calls create new stack frames:
+
+```javascript
+function add(a, b) {
+  return a + b;
+}
+
+add(1, 2);
+```
+
+During execution:
+
+<Steps>
+  <Step title="Push callee">
+    `GetGlobal("add")` → pushes the function object to the stack
+  </Step>
+  
+  <Step title="Push arguments">
+    `PushConst(1)` → push 1.0
+    
+    `PushConst(2)` → push 2.0
+  </Step>
+  
+  <Step title="Call">
+    `Call(2)` → pops 2 args + callee, creates new frame:
+    ```gleam
+    SavedFrame(
+      pc: 15,           // Return address
+      ops: parent_ops,
+      locals: parent_locals,
+      stack: parent_stack,
+      // ...
+    )
+    ```
+  </Step>
+  
+  <Step title="Execute body">
+    Function body runs with `locals = [1.0, 2.0]` (parameters bound to locals)
+  </Step>
+  
+  <Step title="Return">
+    `Return` → pops the frame, restores parent state, pushes return value to parent stack
+  </Step>
+</Steps>
+
+### Closures capture variables
+
+Closures use boxed locals for captured variables:
+
+```javascript
+function makeCounter() {
+  let count = 0;
+  return () => ++count;
+}
+```
+
+`count` is **boxed** (wrapped in a mutable cell) so both the outer function and the closure can access it:
+
+```gleam
+BoxLocal(0)         // Box local[0] (count)
+MakeClosure(0, [0]) // Create closure with capture[0] = boxed local[0]
+```
+
+When the closure runs, it reads from the captured box:
+
+```gleam
+GetBoxed(0)  // Read from capture[0]
+// increment logic
+PutBoxed(0)  // Write to capture[0]
+```
+
+## Async and generators
+
+Arc supports `async`/`await` and generators, but execution is **synchronous** on the BEAM:
+
+- **Promises** are data structures (not BEAM processes)
+- **`await`** is a VM operation that checks promise state
+- **`yield`** suspends execution and returns control to the caller
+
+```javascript
+async function fetchData() {
+  const result = await fetch('/api/data');
+  return result.json();
+}
+```
+
+<Info>
+Arc's `async`/`await` is cooperative — promises don't auto-resolve. You need message passing or external events to fulfill them.
+</Info>
+
+## REPL vs module execution
+
+Two execution modes with different scoping:
+
+<Tabs>
+  <Tab title="REPL mode">
+    Top-level declarations become global bindings:
+    ```javascript
+    > const x = 10
+    > x * 2
+    20
+    ```
+    
+    Uses `compile_repl()` which emits `DeclareGlobalLex`/`InitGlobalLex` instead of `DeclareLocal`.
+  </Tab>
+  
+  <Tab title="Module mode">
+    Top-level declarations are module-scoped locals:
+    ```javascript
+    // examples/simple.js
+    const x = 10;  // local to module
+    export const y = x * 2;
+    ```
+    
+    Uses `compile_module()` which keeps top-level bindings as locals. Exports are extracted from the locals array after evaluation.
+  </Tab>
+</Tabs>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Actor model" icon="users" href="/concepts/actor-model">
+    Learn how Arc.spawn creates BEAM processes for concurrent execution
+  </Card>
+  
+  <Card title="Modules" icon="cube" href="/concepts/modules">
+    Explore ES module compilation and the two-phase bundle lifecycle
+  </Card>
+</CardGroup>

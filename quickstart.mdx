@@ -1,80 +1,340 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get Arc running and execute your first concurrent JavaScript program in minutes
 ---
 
-## Get started in three steps
+# Quickstart
 
-Get your documentation site running locally and make your first customization.
+This guide will get you from zero to running your first concurrent JavaScript program on the BEAM in under 5 minutes.
 
-### Step 1: Set up your local environment
+## Prerequisites
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+Before you begin, make sure you have:
 
-### Step 2: Deploy your changes
+- **Erlang/OTP 26+** - Arc runs on the BEAM VM
+- **Gleam 1.0+** - Arc is written in Gleam
+- **Git** - To clone the repository
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+See the [installation guide](/installation) for detailed setup instructions.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+## Run your first program
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+<Steps>
+  <Step title="Clone the Arc repository">
+    ```bash
+    git clone https://github.com/your-org/arc.git
+    cd arc
+    ```
+  </Step>
 
-### Step 3: Go live
+  <Step title="Build Arc">
+    Arc uses Gleam's build system:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```bash
+    gleam build
+    ```
+
+    This compiles Arc to BEAM bytecode. The first build may take a minute as it downloads dependencies.
+  </Step>
+
+  <Step title="Run a sample program">
+    Arc includes several example programs. Let's start with the simplest one:
+
+    ```bash
+    gleam run examples/simple.js
+    ```
+
+    You should see output showing two processes communicating:
+
+    ```
+    <0.XXX.0>: Hello from main
+    <0.YYY.0>: Hello from child
+    ```
+
+    Each `<0.XXX.0>` is a BEAM process ID (PID). You've just run concurrent JavaScript on the BEAM!
+  </Step>
+
+  <Step title="Try the interactive REPL">
+    Arc includes a read-eval-print loop for interactive experimentation:
+
+    ```bash
+    gleam run
+    ```
+
+    You'll see the Arc prompt:
+
+    ```
+    arc -- JavaScript on the BEAM
+    Run /help for commands, Ctrl+C to exit.
+
+    >
+    ```
+
+    Try spawning a process interactively:
+
+    ```javascript
+    > const pid = Arc.spawn(() => { Arc.log('Hello from', Arc.self()) })
+    Hello from <0.XXX.0>
+    > Arc.self()
+    <0.YYY.0>
+    ```
+  </Step>
+</Steps>
+
+## Example programs
+
+Arc includes several examples demonstrating different concurrency patterns. All examples are in the `examples/` directory.
+
+### Simple message passing
+
+The most basic example shows parent-child communication:
+
+```javascript simple.js
+const pid = Arc.spawn(() => {
+	const message = Arc.receive();
+	Arc.log(message);
+	Arc.log(`${Arc.self()}: Hello from child`);
+});
+
+Arc.send(pid, `${Arc.self()}: Hello from main`);
+```
+
+**Run it:**
+```bash
+gleam run examples/simple.js
+```
+
+### Counter actor
+
+A stateful process that responds to messages - the classic actor pattern:
+
+```javascript counter_actor.js
+var parent = Arc.self();
+
+var counter = Arc.spawn(() => {
+	var count = 0;
+	while (true) {
+		var msg = Arc.receive();
+		if (msg.type === 'inc') {
+			count = count + msg.n;
+			Arc.log('counter: incremented by', msg.n, '-> now', count);
+		}
+		if (msg.type === 'get') {
+			Arc.send(msg.from, { type: 'value', count: count });
+		}
+		if (msg.type === 'stop') {
+			Arc.log('counter: stopping with final value', count);
+			Arc.send(msg.from, { type: 'stopped', count: count });
+			return;
+		}
+	}
+});
+
+Arc.send(counter, { type: 'inc', n: 10 });
+Arc.send(counter, { type: 'inc', n: 5 });
+Arc.send(counter, { type: 'get', from: parent });
+
+var result = Arc.receive(1000);
+Arc.log('Main got counter value:', result.count);
+```
+
+**Run it:**
+```bash
+gleam run examples/counter_actor.js
+```
+
+**Output:**
+```
+counter: incremented by 10 -> now 10
+counter: incremented by 5 -> now 15
+Main got counter value: 15
+```
+
+### Concurrent processes
+
+Multiple processes running in parallel on the BEAM scheduler:
+
+```javascript concurrent.js
+function run(name, delay) {
+	Arc.log(Arc.self(), 'is starting');
+	let i = 1;
+	while (true) {
+		Arc.log(`${name} tick`, i);
+		i = i + 1;
+		Arc.sleep(delay);
+	}
+}
+
+Arc.spawn(() => run('[Process A]', 50));
+Arc.spawn(() => run('    [Process B]', 200));
+
+Arc.log('  [Main] sleeping... watch A and B interleave!');
+Arc.sleep(800);
+```
+
+**Run it:**
+```bash
+gleam run examples/concurrent.js
+```
+
+You'll see Process A and Process B logging at different rates, interleaved by the BEAM scheduler.
+
+### Ping pong
+
+Classic Erlang-style bidirectional message passing:
+
+```javascript ping_pong.js
+var pong_pid = Arc.spawn(() => {
+	while (true) {
+		var msg = Arc.receive();
+		Arc.log('pong received:', msg.text, 'from', msg.from);
+		Arc.send(msg.from, { text: 'pong', count: msg.count + 1, from: Arc.self() });
+		if (msg.count >= 5) {
+			return;
+		}
+	}
+});
+
+var count = 0;
+Arc.send(pong_pid, { text: 'ping', count: count, from: Arc.self() });
+
+while (count < 5) {
+	var reply = Arc.receive(2000);
+	if (reply === undefined) {
+		Arc.log('Timed out!');
+		count = 999;
+	} else {
+		Arc.log('ping received:', reply.text, 'count:', reply.count);
+		count = reply.count;
+		if (count < 5) {
+			Arc.send(pong_pid, { text: 'ping', count: count, from: Arc.self() });
+		}
+	}
+}
+```
+
+**Run it:**
+```bash
+gleam run examples/ping_pong.js
+```
+
+### Ring benchmark
+
+Pass a message around N processes M times - a classic Erlang concurrency benchmark:
+
+```javascript ring.js
+var N = 100; // number of processes in the ring
+var M = 10;  // number of laps around the ring
+
+var first = Arc.self();
+var prev = first;
+
+var i = N;
+while (i > 0) {
+	var next = prev;
+	prev = Arc.spawn(() => {
+		while (true) {
+			var msg = Arc.receive();
+			if (msg.type === 'stop') {
+				return;
+			}
+			Arc.send(next, { type: 'token', lap: msg.lap, hops: msg.hops + 1 });
+		}
+	});
+	i = i - 1;
+}
+
+Arc.log('Ring of', N, 'processes created. Sending token for', M, 'laps...');
+Arc.send(prev, { type: 'token', lap: 0, hops: 0 });
+
+var lap = 0;
+while (lap < M) {
+	var msg = Arc.receive(5000);
+	lap = msg.lap + 1;
+	Arc.log('Lap', lap, 'complete -', msg.hops, 'hops');
+	if (lap < M) {
+		Arc.send(prev, { type: 'token', lap: lap, hops: 0 });
+	}
+}
+```
+
+**Run it:**
+```bash
+gleam run examples/ring.js
+```
+
+This creates 100 lightweight processes and passes a token around the ring 10 times (1000 total message passes).
+
+## REPL commands
+
+The Arc REPL includes several helpful commands:
+
+<CodeGroup>
+```bash Commands
+/help   - Show help message
+/clear  - Clear the console
+/reset  - Reset the REPL state (new heap, fresh globals)
+/exit   - Exit the REPL
+/heap <expr> - Evaluate expression and show heap information
+```
+
+```javascript Example session
+> const x = { count: 42 }
+{ count: 42 }
+> /heap x
+ObjectSlot { kind: OrdinaryObject, properties: {"count": 42}, ... }
+> /reset
+arc -- JavaScript on the BEAM
+Run /help for commands, Ctrl+C to exit.
+
+> x
+ReferenceError: x is not defined
+```
+</CodeGroup>
+
+## Process isolation demo
+
+Arc processes are truly isolated - each spawned process gets a copy of the VM:
+
+```javascript mutability.js
+let i = 0;
+const main = Arc.self();
+
+Arc.spawn(() => {
+	i = 10;
+	Arc.log(Arc.self(), 'I set `i` to', i);
+	Arc.send(main);
+});
+
+Arc.log(main, 'but I see that `i` is', i);
+```
+
+**Run it:**
+```bash
+gleam run examples/mutability.js
+```
+
+**Output:**
+```
+<0.XXX.0> I set `i` to 10
+<0.YYY.0> but I see that `i` is 0
+```
+
+The child process's mutation doesn't affect the parent!
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="API reference" icon="book" href="/api/arc-namespace">
+    Learn about all Arc primitives and built-in APIs
+  </Card>
+  <Card title="Core concepts" icon="lightbulb" href="/concepts/overview">
+    Understand Arc's design and architecture
+  </Card>
+  <Card title="Actor programming" icon="users" href="/guides/actor-programming">
+    Master concurrent programming patterns
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/architecture/overview">
+    Understand how Arc works under the hood
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

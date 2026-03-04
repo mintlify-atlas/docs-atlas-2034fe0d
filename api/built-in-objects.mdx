@@ -1,0 +1,484 @@
+---
+title: Built-in objects
+description: ECMAScript built-in objects and constructors implemented in Arc
+---
+
+Arc implements a comprehensive set of ECMAScript built-in objects and constructors. This page documents which standard JavaScript objects are available and their level of support.
+
+## Fundamental objects
+
+Core objects that form the foundation of JavaScript's object model.
+
+### Object
+
+The base prototype for all JavaScript objects. Provides fundamental methods for object manipulation.
+
+<AccordionGroup>
+  <Accordion title="Static methods">
+    - `Object.create(proto, properties?)` - Create object with specified prototype
+    - `Object.assign(target, ...sources)` - Copy properties from sources to target
+    - `Object.keys(obj)` - Return array of enumerable property names
+    - `Object.values(obj)` - Return array of enumerable property values
+    - `Object.entries(obj)` - Return array of [key, value] pairs
+    - `Object.fromEntries(entries)` - Create object from [key, value] pairs
+    - `Object.getPrototypeOf(obj)` - Get object's prototype
+    - `Object.setPrototypeOf(obj, proto)` - Set object's prototype
+    - `Object.defineProperty(obj, prop, descriptor)` - Define property with descriptor
+    - `Object.defineProperties(obj, descriptors)` - Define multiple properties
+    - `Object.getOwnPropertyDescriptor(obj, prop)` - Get property descriptor
+    - `Object.getOwnPropertyDescriptors(obj)` - Get all property descriptors
+    - `Object.getOwnPropertyNames(obj)` - Get all own property names
+    - `Object.getOwnPropertySymbols(obj)` - Get all own symbol properties
+    - `Object.freeze(obj)` - Freeze object (prevent modifications)
+    - `Object.seal(obj)` - Seal object (prevent property additions)
+    - `Object.preventExtensions(obj)` - Prevent adding new properties
+    - `Object.isFrozen(obj)` - Check if object is frozen
+    - `Object.isSealed(obj)` - Check if object is sealed
+    - `Object.isExtensible(obj)` - Check if object is extensible
+    - `Object.is(value1, value2)` - Same-value equality comparison
+    - `Object.hasOwn(obj, prop)` - Check if object has own property
+  </Accordion>
+  
+  <Accordion title="Instance methods">
+    - `obj.hasOwnProperty(prop)` - Check for own property
+    - `obj.propertyIsEnumerable(prop)` - Check if property is enumerable
+    - `obj.toString()` - String representation
+    - `obj.valueOf()` - Primitive value of object
+  </Accordion>
+</AccordionGroup>
+
+### Function
+
+The constructor for function objects.
+
+<AccordionGroup>
+  <Accordion title="Instance methods">
+    - `fn.call(thisArg, ...args)` - Call function with specified `this`
+    - `fn.apply(thisArg, argsArray)` - Call function with `this` and arguments array
+    - `fn.bind(thisArg, ...args)` - Create bound function
+  </Accordion>
+</AccordionGroup>
+
+### Boolean
+
+Wrapper object for boolean values.
+
+- `new Boolean(value)` - Create Boolean object
+- `Boolean.prototype.valueOf()` - Get primitive boolean value
+- `Boolean.prototype.toString()` - Convert to string "true" or "false"
+
+### Symbol
+
+Unique and immutable primitive values used as object property keys.
+
+```javascript
+const sym = Symbol('description');
+const obj = { [sym]: 'value' };
+```
+
+---
+
+## Numbers and dates
+
+### Number
+
+Wrapper object for numeric values with utility methods.
+
+<AccordionGroup>
+  <Accordion title="Static properties">
+    - `Number.NaN` - Not-a-Number value
+    - `Number.POSITIVE_INFINITY` - Positive infinity
+    - `Number.NEGATIVE_INFINITY` - Negative infinity
+    - `Number.MAX_SAFE_INTEGER` - Maximum safe integer (2^53 - 1)
+    - `Number.MIN_SAFE_INTEGER` - Minimum safe integer (-(2^53 - 1))
+    - `Number.EPSILON` - Smallest representable positive number
+  </Accordion>
+  
+  <Accordion title="Static methods">
+    - `Number.isNaN(value)` - Check if value is NaN (no coercion)
+    - `Number.isFinite(value)` - Check if value is finite (no coercion)
+    - `Number.isInteger(value)` - Check if value is an integer
+    - `Number.isSafeInteger(value)` - Check if value is a safe integer
+    - `Number.parseInt(string, radix?)` - Parse integer from string
+    - `Number.parseFloat(string)` - Parse float from string
+  </Accordion>
+  
+  <Accordion title="Instance methods">
+    - `num.toString(radix?)` - Convert to string in given radix
+    - `num.valueOf()` - Get primitive number value
+    - `num.toFixed(digits)` - Format with fixed decimal places
+    - `num.toPrecision(precision)` - Format with specified precision
+    - `num.toExponential(fractionDigits)` - Format in exponential notation
+  </Accordion>
+</AccordionGroup>
+
+### Math
+
+Mathematical functions and constants. `Math` is a namespace object, not a constructor.
+
+<AccordionGroup>
+  <Accordion title="Constants">
+    - `Math.PI` - π (3.141592653589793)
+    - `Math.E` - Euler's number (2.718281828459045)
+    - `Math.LN2` - Natural logarithm of 2
+    - `Math.LN10` - Natural logarithm of 10
+    - `Math.LOG2E` - Base 2 logarithm of E
+    - `Math.LOG10E` - Base 10 logarithm of E
+    - `Math.SQRT2` - Square root of 2
+    - `Math.SQRT1_2` - Square root of 1/2
+  </Accordion>
+  
+  <Accordion title="Basic operations">
+    - `Math.abs(x)` - Absolute value
+    - `Math.sign(x)` - Sign of number (-1, 0, or 1)
+    - `Math.floor(x)` - Round down to integer
+    - `Math.ceil(x)` - Round up to integer
+    - `Math.round(x)` - Round to nearest integer
+    - `Math.trunc(x)` - Remove fractional part
+    - `Math.max(...values)` - Maximum value
+    - `Math.min(...values)` - Minimum value
+    - `Math.random()` - Random number [0, 1)
+  </Accordion>
+  
+  <Accordion title="Exponential and logarithmic">
+    - `Math.pow(base, exp)` - Power
+    - `Math.sqrt(x)` - Square root
+    - `Math.cbrt(x)` - Cube root
+    - `Math.exp(x)` - e^x
+    - `Math.expm1(x)` - e^x - 1
+    - `Math.log(x)` - Natural logarithm
+    - `Math.log10(x)` - Base 10 logarithm
+    - `Math.log2(x)` - Base 2 logarithm
+    - `Math.log1p(x)` - Natural log of 1 + x
+  </Accordion>
+  
+  <Accordion title="Trigonometric">
+    - `Math.sin(x)`, `Math.cos(x)`, `Math.tan(x)` - Trigonometric functions
+    - `Math.asin(x)`, `Math.acos(x)`, `Math.atan(x)` - Inverse trigonometric
+    - `Math.atan2(y, x)` - Arctangent of quotient
+    - `Math.sinh(x)`, `Math.cosh(x)`, `Math.tanh(x)` - Hyperbolic functions
+    - `Math.asinh(x)`, `Math.acosh(x)`, `Math.atanh(x)` - Inverse hyperbolic
+  </Accordion>
+  
+  <Accordion title="Other">
+    - `Math.hypot(...values)` - Square root of sum of squares
+    - `Math.fround(x)` - Round to 32-bit float
+    - `Math.clz32(x)` - Count leading zero bits
+    - `Math.imul(a, b)` - 32-bit integer multiplication
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Text processing
+
+### String
+
+Wrapper object for string primitives with extensive text manipulation methods.
+
+<AccordionGroup>
+  <Accordion title="Static methods">
+    - `String.fromCharCode(...codes)` - Create string from UTF-16 code units
+    - `String.fromCodePoint(...codePoints)` - Create string from Unicode code points
+    - `String.raw(template, ...substitutions)` - Raw template string
+  </Accordion>
+  
+  <Accordion title="Instance methods - access">
+    - `str.charAt(index)` - Character at index
+    - `str.charCodeAt(index)` - UTF-16 code unit at index
+    - `str.codePointAt(index)` - Unicode code point at index
+    - `str.at(index)` - Character at index (supports negative)
+  </Accordion>
+  
+  <Accordion title="Instance methods - search">
+    - `str.indexOf(searchString, position?)` - First occurrence index
+    - `str.lastIndexOf(searchString, position?)` - Last occurrence index
+    - `str.includes(searchString, position?)` - Check if contains substring
+    - `str.startsWith(searchString, position?)` - Check if starts with
+    - `str.endsWith(searchString, length?)` - Check if ends with
+    - `str.search(regexp)` - Search using regular expression
+    - `str.match(regexp)` - Match against regular expression
+  </Accordion>
+  
+  <Accordion title="Instance methods - transform">
+    - `str.toLowerCase()` - Convert to lowercase
+    - `str.toUpperCase()` - Convert to uppercase
+    - `str.toLocaleLowerCase()` - Locale-aware lowercase
+    - `str.toLocaleUpperCase()` - Locale-aware uppercase
+    - `str.trim()` - Remove whitespace from both ends
+    - `str.trimStart()` / `str.trimLeft()` - Remove leading whitespace
+    - `str.trimEnd()` / `str.trimRight()` - Remove trailing whitespace
+    - `str.normalize(form?)` - Unicode normalization
+  </Accordion>
+  
+  <Accordion title="Instance methods - manipulation">
+    - `str.slice(start, end?)` - Extract substring
+    - `str.substring(start, end?)` - Extract substring (different behavior)
+    - `str.concat(...strings)` - Concatenate strings
+    - `str.repeat(count)` - Repeat string
+    - `str.padStart(length, padString?)` - Pad at start
+    - `str.padEnd(length, padString?)` - Pad at end
+    - `str.split(separator, limit?)` - Split into array
+    - `str.replace(pattern, replacement)` - Replace first match
+    - `str.replaceAll(pattern, replacement)` - Replace all matches
+  </Accordion>
+  
+  <Accordion title="Instance methods - other">
+    - `str.toString()` - String representation
+    - `str.valueOf()` - Primitive string value
+  </Accordion>
+</AccordionGroup>
+
+### RegExp
+
+Regular expression pattern matching.
+
+```javascript
+const regex = /pattern/flags;
+const result = regex.test('string');
+```
+
+---
+
+## Indexed collections
+
+### Array
+
+Ordered collections with extensive manipulation methods.
+
+<AccordionGroup>
+  <Accordion title="Static methods">
+    - `Array.isArray(value)` - Check if value is an array
+    - `Array.from(arrayLike, mapFn?)` - Create array from iterable/array-like
+    - `Array.of(...elements)` - Create array from arguments
+  </Accordion>
+  
+  <Accordion title="Mutating methods">
+    - `arr.push(...elements)` - Add to end
+    - `arr.pop()` - Remove from end
+    - `arr.unshift(...elements)` - Add to start
+    - `arr.shift()` - Remove from start
+    - `arr.splice(start, deleteCount, ...items)` - Add/remove elements
+    - `arr.reverse()` - Reverse in place
+    - `arr.sort(compareFn?)` - Sort in place
+    - `arr.fill(value, start?, end?)` - Fill with static value
+    - `arr.copyWithin(target, start, end?)` - Shallow copy within array
+  </Accordion>
+  
+  <Accordion title="Non-mutating methods">
+    - `arr.slice(start?, end?)` - Extract subarray
+    - `arr.concat(...values)` - Concatenate arrays
+    - `arr.join(separator?)` - Join elements to string
+    - `arr.at(index)` - Element at index (supports negative)
+    - `arr.toReversed()` - Reversed copy
+    - `arr.toSorted(compareFn?)` - Sorted copy
+    - `arr.toSpliced(start, deleteCount, ...items)` - Spliced copy
+    - `arr.with(index, value)` - Copy with element replaced
+  </Accordion>
+  
+  <Accordion title="Search methods">
+    - `arr.indexOf(searchElement, fromIndex?)` - First index of element
+    - `arr.lastIndexOf(searchElement, fromIndex?)` - Last index of element
+    - `arr.includes(searchElement, fromIndex?)` - Check if contains element
+    - `arr.find(predicate)` - First element matching predicate
+    - `arr.findIndex(predicate)` - Index of first matching element
+    - `arr.findLast(predicate)` - Last element matching predicate
+    - `arr.findLastIndex(predicate)` - Index of last matching element
+  </Accordion>
+  
+  <Accordion title="Iteration methods">
+    - `arr.forEach(callback)` - Execute function for each element
+    - `arr.map(callback)` - Transform each element
+    - `arr.filter(predicate)` - Filter elements
+    - `arr.reduce(callback, initialValue?)` - Reduce to single value
+    - `arr.reduceRight(callback, initialValue?)` - Reduce right-to-left
+    - `arr.every(predicate)` - Test if all elements match
+    - `arr.some(predicate)` - Test if any element matches
+    - `arr.flat(depth?)` - Flatten nested arrays
+    - `arr.flatMap(callback)` - Map and flatten
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Keyed collections
+
+### Map
+
+Key-value pairs with any value as key.
+
+```javascript
+const map = new Map();
+map.set('key', 'value');
+map.get('key');  // 'value'
+map.has('key');  // true
+map.delete('key');
+map.size;  // 0
+```
+
+### Set
+
+Unique values collection.
+
+```javascript
+const set = new Set();
+set.add(1);
+set.add(2);
+set.add(1);  // no effect
+set.has(1);  // true
+set.size;    // 2
+```
+
+### WeakMap
+
+Weakly-held key-value pairs (keys must be objects).
+
+```javascript
+const weakMap = new WeakMap();
+const key = {};
+weakMap.set(key, 'value');
+```
+
+### WeakSet
+
+Weakly-held unique objects.
+
+```javascript
+const weakSet = new WeakSet();
+const obj = {};
+weakSet.add(obj);
+```
+
+---
+
+## Control abstraction
+
+### Promise
+
+Asynchronous operation representation.
+
+<AccordionGroup>
+  <Accordion title="Constructor">
+    ```javascript
+    const promise = new Promise((resolve, reject) => {
+      // Async operation
+      resolve(value);
+      // or
+      reject(error);
+    });
+    ```
+  </Accordion>
+  
+  <Accordion title="Static methods">
+    - `Promise.resolve(value)` - Create resolved promise
+    - `Promise.reject(reason)` - Create rejected promise
+  </Accordion>
+  
+  <Accordion title="Instance methods">
+    - `promise.then(onFulfilled?, onRejected?)` - Handle fulfillment/rejection
+    - `promise.catch(onRejected)` - Handle rejection
+    - `promise.finally(onFinally)` - Run cleanup code
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+Arc implements the core Promise API but does not yet support `Promise.all()`, `Promise.race()`, `Promise.allSettled()`, or `Promise.any()`.
+</Note>
+
+### Generator
+
+Generator functions and iterators.
+
+```javascript
+function* generator() {
+  yield 1;
+  yield 2;
+  return 3;
+}
+
+const gen = generator();
+gen.next();  // { value: 1, done: false }
+gen.next();  // { value: 2, done: false }
+gen.next();  // { value: 3, done: true }
+```
+
+---
+
+## Structured data
+
+### JSON
+
+JSON parsing and serialization.
+
+```javascript
+const obj = { name: 'Arc', version: 1 };
+const json = JSON.stringify(obj);
+// '{"name":"Arc","version":1}'
+
+const parsed = JSON.parse(json);
+// { name: 'Arc', version: 1 }
+```
+
+---
+
+## Error objects
+
+Standard error constructors for exception handling.
+
+<CardGroup cols={2}>
+  <Card title="Error" icon="triangle-exclamation">
+    Base error type for all exceptions
+  </Card>
+  
+  <Card title="TypeError" icon="xmark">
+    Type-related errors (wrong type)
+  </Card>
+  
+  <Card title="ReferenceError" icon="question">
+    Reference to undefined variable
+  </Card>
+  
+  <Card title="RangeError" icon="ruler">
+    Value out of valid range
+  </Card>
+  
+  <Card title="SyntaxError" icon="code">
+    Parsing/syntax errors
+  </Card>
+  
+  <Card title="EvalError" icon="terminal">
+    Errors in eval() execution
+  </Card>
+  
+  <Card title="URIError" icon="link">
+    URI encoding/decoding errors
+  </Card>
+  
+  <Card title="AggregateError" icon="layer-group">
+    Multiple errors aggregated
+  </Card>
+</CardGroup>
+
+```javascript
+try {
+  throw new TypeError('Expected a string');
+} catch (error) {
+  Arc.log(error.message);  // 'Expected a string'
+}
+```
+
+---
+
+## Implementation status
+
+<Check>
+**Fully implemented**: Object, Function, Array, String, Number, Boolean, Symbol, Math, JSON, Promise (core), Map, Set, WeakMap, WeakSet, RegExp, Error types, Generator
+</Check>
+
+<Warning>
+**Not yet implemented**: Date, Typed Arrays (Int8Array, Uint8Array, etc.), ArrayBuffer, DataView, Proxy, Reflect, Intl, BigInt64Array, BigUint64Array, SharedArrayBuffer, Atomics
+</Warning>
+
+<Info>
+**Partial implementation**: Promise (missing static combinators like `Promise.all()`)
+</Info>

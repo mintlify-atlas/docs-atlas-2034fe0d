@@ -1,0 +1,289 @@
+---
+title: Test262 conformance
+description: ECMAScript Test262 conformance testing and current implementation status
+---
+
+Arc uses the official ECMAScript Test262 test suite to validate conformance with the JavaScript specification. This page explains how Test262 testing works and documents Arc's current conformance status.
+
+## What is Test262?
+
+Test262 is the official conformance test suite for ECMAScript, maintained by TC39 (the committee that standardizes JavaScript). It contains thousands of tests covering all aspects of the ECMAScript specification, from basic syntax to complex edge cases in built-in objects and operations.
+
+<CardGroup cols={2}>
+  <Card title="Comprehensive coverage" icon="list-check">
+    Tests cover syntax, semantics, built-in objects, and edge cases across the entire ECMAScript specification.
+  </Card>
+  
+  <Card title="Authoritative source" icon="stamp">
+    Maintained by TC39, the same committee that writes the ECMAScript specification.
+  </Card>
+  
+  <Card title="Engine validation" icon="check">
+    All major JavaScript engines (V8, SpiderMonkey, JavaScriptCore) use Test262 to validate conformance.
+  </Card>
+  
+  <Card title="Continuously updated" icon="arrows-rotate">
+    New tests are added as the specification evolves, ensuring implementations stay current.
+  </Card>
+</CardGroup>
+
+---
+
+## Running Test262 tests
+
+Arc provides multiple modes for running Test262 tests during development:
+
+### Parser-only tests (fast)
+
+Test only parsing conformance without executing code:
+
+```bash
+TEST262=1 gleam test
+```
+
+This mode validates that Arc can correctly parse all valid JavaScript syntax and properly reject invalid syntax. It's fast and useful for validating parser implementation.
+
+### Full execution tests (comprehensive)
+
+Run the complete Test262 execution suite:
+
+```bash
+TEST262_EXEC=1 gleam test
+```
+
+This mode parses AND executes all Test262 tests, validating both syntax and runtime semantics. It tests:
+
+- Built-in object behavior
+- Type coercion rules  
+- Operator semantics
+- Control flow
+- Scope and closures
+- Error handling
+- Edge cases and corner cases
+
+<Warning>
+Full execution tests take significantly longer than parser-only tests. Use this mode when validating runtime behavior or before releases.
+</Warning>
+
+### Saving test results
+
+Write test results to a JSON file for analysis:
+
+```bash
+TEST262_EXEC=1 RESULTS_FILE=results.json gleam test
+```
+
+The results file contains detailed information about which tests passed, failed, or were skipped, enabling regression detection and conformance tracking over time.
+
+---
+
+## Conformance status
+
+Arc's Test262 conformance is continuously tracked and visualized. Check the [GitHub repository](https://github.com/alii/arc) for the current conformance chart showing the pass rate across different categories of the ECMAScript specification.
+
+### What the chart shows
+
+The conformance chart displays:
+
+- **Pass rate percentage** - What portion of Test262 tests pass successfully
+- **Category breakdown** - Conformance by spec area (built-ins, syntax, language features)
+- **Historical trends** - How conformance has improved over time
+- **Known gaps** - Areas where conformance is incomplete
+
+### Current conformance highlights
+
+<AccordionGroup>
+  <Accordion title="Strong conformance areas">
+    - Core syntax and operators
+    - Fundamental built-in objects (Object, Array, Function)
+    - Type coercion and comparison
+    - String and number operations
+    - Basic error handling
+  </Accordion>
+  
+  <Accordion title="Partial conformance areas">
+    - Promises (core API implemented, static combinators missing)
+    - Regular expressions (basic matching, some advanced features incomplete)
+    - Generators (basic support, some edge cases)
+    - Symbol and well-known symbols
+  </Accordion>
+  
+  <Accordion title="Known gaps">
+    - Date and temporal operations (not yet implemented)
+    - Typed arrays and ArrayBuffer (not yet implemented)
+    - Proxy and Reflect (not yet implemented)
+    - Internationalization API (not yet implemented)
+    - Some advanced regular expression features
+    - WeakRef and FinalizationRegistry
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Test262 categories
+
+Test262 organizes tests into categories matching the ECMAScript specification structure:
+
+### Language features
+
+- **Expressions** - Operators, literals, function calls, property access
+- **Statements** - Control flow, declarations, loops, exception handling
+- **Functions** - Function declarations, expressions, arrows, parameters, scope
+- **Classes** - Class declarations, inheritance, static/instance members
+- **Modules** - Import/export syntax and semantics
+
+### Built-in objects
+
+- **Fundamental objects** - Object, Function, Boolean, Symbol, Error types
+- **Numbers and dates** - Number, Math, BigInt, Date
+- **Text processing** - String, RegExp
+- **Indexed collections** - Array, typed arrays
+- **Keyed collections** - Map, Set, WeakMap, WeakSet
+- **Structured data** - JSON, ArrayBuffer, SharedArrayBuffer
+- **Control abstraction** - Promise, Generator, AsyncFunction
+- **Reflection** - Reflect, Proxy
+- **Internationalization** - Intl namespace
+
+### Global properties
+
+- **Value properties** - undefined, NaN, Infinity, globalThis
+- **Function properties** - eval, parseInt, parseFloat, isNaN, isFinite
+- **URI functions** - encodeURI, decodeURI, encodeURIComponent, decodeURIComponent
+
+---
+
+## Interpreting test failures
+
+When Test262 tests fail, the failures fall into several categories:
+
+<Accordion title="Unimplemented features">
+  Features that are not yet implemented in Arc. For example, tests for `Date` objects will fail because Arc doesn't yet implement the Date API.
+</Accordion>
+
+<Accordion title="Specification edge cases">
+  Subtle edge cases in the specification that Arc doesn't yet handle correctly. These are often complex interactions between features or corner cases in type coercion.
+</Accordion>
+
+<Accordion title="Intentional deviations">
+  Cases where Arc intentionally deviates from the specification, usually for BEAM integration or runtime constraints.
+</Accordion>
+
+<Accordion title="Test harness limitations">
+  Some tests may fail due to differences in the test environment rather than the implementation itself.
+</Accordion>
+
+---
+
+## Contributing to conformance
+
+Improving Test262 conformance is an ongoing effort. Here's how to contribute:
+
+### 1. Identify failing tests
+
+```bash
+TEST262_EXEC=1 RESULTS_FILE=results.json gleam test
+```
+
+Analyze `results.json` to find specific failing tests.
+
+### 2. Investigate the failure
+
+Read the test source to understand what ECMAScript behavior it's validating. Reference the specification sections mentioned in test metadata.
+
+### 3. Implement the missing behavior
+
+Add or fix the implementation in the appropriate builtin module in `src/arc/vm/builtins/`.
+
+### 4. Verify the fix
+
+Re-run tests to ensure the specific test now passes and no regressions were introduced:
+
+```bash
+TEST262_EXEC=1 gleam test
+```
+
+### 5. Update documentation
+
+If implementing a new feature, update the API reference documentation to reflect the new functionality.
+
+---
+
+## Test262 test structure
+
+Test262 tests are JavaScript files with special metadata:
+
+```javascript
+// Copyright notice...
+
+/*---
+description: Array.prototype.map creates new array
+esid: sec-array.prototype.map
+features: [Array.prototype.map]
+---*/
+
+const arr = [1, 2, 3];
+const result = arr.map(x => x * 2);
+
+assert.sameValue(result.length, 3);
+assert.sameValue(result[0], 2);
+assert.sameValue(result[1], 4);
+assert.sameValue(result[2], 6);
+```
+
+The YAML frontmatter contains:
+
+- **description** - Human-readable test purpose
+- **esid** - ECMAScript specification section ID
+- **features** - Language features required for the test
+- **flags** - Special test behaviors (async, module, noStrict, etc.)
+- **negative** - Expected error type for negative tests
+
+---
+
+## Conformance goals
+
+Arc aims for high conformance with modern ECMAScript while prioritizing:
+
+<Steps>
+  <Step title="Core language features">
+    Syntax, operators, control flow, functions, closures, scope
+  </Step>
+  
+  <Step title="Fundamental built-ins">
+    Object, Array, String, Number, Function, Promise
+  </Step>
+  
+  <Step title="BEAM integration">
+    Actor model primitives, process management, message passing
+  </Step>
+  
+  <Step title="Advanced features">
+    Generators, iterators, symbols, proxies, typed arrays
+  </Step>
+  
+  <Step title="Internationalization">
+    Locale-aware formatting and comparison (future work)
+  </Step>
+</Steps>
+
+---
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="Test262 Repository" icon="github" href="https://github.com/tc39/test262">
+    Official Test262 source code and documentation
+  </Card>
+  
+  <Card title="ECMAScript Specification" icon="book" href="https://tc39.es/ecma262/">
+    The authoritative JavaScript language specification
+  </Card>
+  
+  <Card title="Test262 Report" icon="chart-line" href="https://test262.report">
+    Compare conformance across JavaScript engines
+  </Card>
+  
+  <Card title="TC39 Proposals" icon="lightbulb" href="https://github.com/tc39/proposals">
+    Upcoming JavaScript features and their status
+  </Card>
+</CardGroup>

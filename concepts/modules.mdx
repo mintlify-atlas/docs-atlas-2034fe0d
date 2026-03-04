@@ -1,0 +1,439 @@
+---
+title: Modules
+description: ES module system and import/export in Arc
+---
+
+Arc supports ES modules with `import` and `export` syntax. Modules are compiled ahead-of-time into a self-contained bundle and evaluated in dependency order.
+
+## Module lifecycle
+
+Arc uses a **two-phase** module system:
+
+<Steps>
+  <Step title="Phase 1: Compile bundle">
+    Parse and compile the entry module and all its dependencies into a `ModuleBundle`. No code is executed yet.
+  </Step>
+  
+  <Step title="Phase 2: Evaluate bundle">
+    Execute modules in dependency order (depth-first post-order), link imports/exports, and run module bodies.
+  </Step>
+</Steps>
+
+This design enables:
+
+- **No runtime parsing** — the VM never sees source code
+- **Serializable bundles** — compile once, load many times
+- **Ahead-of-time analysis** — detect missing modules before execution
+
+<Info>
+The module system is implemented in `src/arc/module.gleam`. Study `compile_bundle()` and `evaluate_bundle()` for details.
+</Info>
+
+## Compiling modules
+
+### compile_bundle()
+
+The `compile_bundle()` function takes an entry point and compiles all dependencies:
+
+```gleam
+// From src/arc/module.gleam
+pub fn compile_bundle(
+  entry_specifier: String,
+  entry_source: String,
+  resolve_and_load: fn(String, String) -> Result(#(String, String), String),
+) -> Result(ModuleBundle, ModuleError)
+```
+
+**Parameters:**
+
+- `entry_specifier` — Entry module path (e.g. `"examples/counter_actor.js"`)
+- `entry_source` — Source code of the entry module
+- `resolve_and_load` — Callback to load dependencies: `fn(raw_specifier, parent_specifier) -> Result(#(resolved_path, source), error)`
+
+**Returns:**
+
+A `ModuleBundle` containing all compiled modules:
+
+```gleam
+pub type ModuleBundle {
+  ModuleBundle(
+    entry: String,                        // Entry module specifier
+    modules: Dict(String, CompiledModule) // All modules in the graph
+  )
+}
+
+pub type CompiledModule {
+  CompiledModule(
+    specifier: String,
+    template: FuncTemplate,                      // Compiled bytecode
+    import_bindings: List(#(String, List(ImportBinding))),
+    export_entries: List(ExportEntry),
+    scope_dict: Dict(String, Int),               // Variable name → local index
+    specifier_map: Dict(String, String),         // Raw specifier → resolved path
+    requested_modules: List(String),             // Dependencies
+  )
+}
+```
+
+### Example: Compiling from disk
+
+```gleam
+// From src/arc.gleam
+fn run_module_file(path: String, source: String) -> Nil {
+  let h = heap.new()
+  let #(h, b) = builtins.init(h)
+  let #(h, global_object) = builtins.globals(b, h)
+
+  case module.compile_bundle(path, source, resolve_and_load_dep) {
+    Error(err) -> print_module_error(h, err)
+    Ok(bundle) ->
+      case module.evaluate_bundle(bundle, h, b, global_object) {
+        Ok(_) -> Nil
+        Error(err) -> print_module_error(h, err)
+      }
+  }
+}
+
+fn resolve_and_load_dep(
+  raw_specifier: String,
+  parent_specifier: String,
+) -> Result(#(String, String), String) {
+  let resolved = resolve_specifier(raw_specifier, parent_specifier)
+  case read_file(resolved) {
+    Ok(source) -> Ok(#(resolved, source))
+    Error(err) -> Error("file not found: " <> resolved)
+  }
+}
+```
+
+<Note>
+The `resolve_and_load` callback is how you integrate custom module resolution (Node.js-style `node_modules`, URL imports, etc.).
+</Note>
+
+## Evaluating modules
+
+### evaluate_bundle()
+
+Once you have a `ModuleBundle`, evaluate it:
+
+```gleam
+pub fn evaluate_bundle(
+  bundle: ModuleBundle,
+  heap: Heap,
+  builtins: Builtins,
+  global_object: Ref,
+) -> Result(#(JsValue, Heap), ModuleError)
+```
+
+Execution order:
+
+1. **Depth-first post-order traversal** — dependencies execute before dependents
+2. **Circular dependencies are allowed** — the cycle is detected and execution continues
+3. **Imports are resolved** — exported values from evaluated dependencies are bound as lexical globals
+4. **Module body runs** — the compiled bytecode executes
+5. **Exports are collected** — the module's local variables are mapped to export names
+
+<Info>
+Each module executes exactly once. Re-evaluating the same bundle reuses cached results.
+</Info>
+
+## Import syntax
+
+Arc supports standard ES module import syntax:
+
+<Tabs>
+  <Tab title="Named imports">
+    ```javascript
+    import { foo, bar } from './utils.js';
+    import { original as renamed } from './utils.js';
+    ```
+    
+    Compiles to `NamedImport` bindings:
+    ```gleam
+    [
+      NamedImport(imported: "foo", local: "foo"),
+      NamedImport(imported: "bar", local: "bar"),
+      NamedImport(imported: "original", local: "renamed"),
+    ]
+    ```
+  </Tab>
+  
+  <Tab title="Default imports">
+    ```javascript
+    import React from 'react';
+    ```
+    
+    Compiles to `DefaultImport`:
+    ```gleam
+    DefaultImport(local: "React")
+    ```
+    
+    Default imports resolve to the `"default"` export.
+  </Tab>
+  
+  <Tab title="Namespace imports">
+    ```javascript
+    import * as utils from './utils.js';
+    ```
+    
+    Compiles to `NamespaceImport`:
+    ```gleam
+    NamespaceImport(local: "utils")
+    ```
+    
+    Creates a namespace object with all exports as properties.
+  </Tab>
+</Tabs>
+
+### Import resolution
+
+At evaluation time, imports are resolved by looking up the dependency's exports:
+
+```gleam
+// From src/arc/module.gleam
+fn resolve_imports(
+  evaluated: Dict(String, Dict(String, JsValue)),
+  specifier_map: Dict(String, String),
+  import_bindings: List(#(String, List(ImportBinding))),
+  heap: Heap,
+  _global_object: Ref,
+) -> #(Heap, Dict(String, JsValue))
+```
+
+This function:
+
+1. Looks up the dependency in `evaluated` (already-executed modules)
+2. For each import binding, extracts the corresponding export value
+3. Returns a dict of `name → value` to be used as lexical globals
+
+<Tip>
+Imported bindings are **not** properties of `globalThis`. They're lexical bindings in the module scope, compiled as local variables.
+</Tip>
+
+## Export syntax
+
+Arc supports several export patterns:
+
+<Tabs>
+  <Tab title="Named exports">
+    ```javascript
+    export const x = 10;
+    export function foo() { return 42; }
+    
+    const y = 20;
+    export { y };
+    export { y as renamed };
+    ```
+    
+    Compiles to `LocalExport` entries:
+    ```gleam
+    [
+      LocalExport(export_name: "x", local_name: "x"),
+      LocalExport(export_name: "foo", local_name: "foo"),
+      LocalExport(export_name: "y", local_name: "y"),
+      LocalExport(export_name: "renamed", local_name: "y"),
+    ]
+    ```
+  </Tab>
+  
+  <Tab title="Default export">
+    ```javascript
+    export default function() { return 42; }
+    // or
+    const value = 42;
+    export default value;
+    ```
+    
+    Compiles to a `LocalExport` with export name `"default"`:
+    ```gleam
+    LocalExport(export_name: "default", local_name: "_default_0")
+    ```
+  </Tab>
+  
+  <Tab title="Re-exports">
+    ```javascript
+    export { foo } from './other.js';
+    export { foo as bar } from './other.js';
+    export * from './other.js';
+    export * as ns from './other.js';
+    ```
+    
+    Compiles to re-export entries:
+    ```gleam
+    [
+      ReExport(export_name: "foo", imported_name: "foo", source_specifier: "./other.js"),
+      ReExport(export_name: "bar", imported_name: "foo", source_specifier: "./other.js"),
+      ReExportAll(source_specifier: "./other.js"),
+      ReExportNamespace(export_name: "ns", source_specifier: "./other.js"),
+    ]
+    ```
+  </Tab>
+</Tabs>
+
+### Export collection
+
+After a module executes, exports are extracted from its local variables:
+
+```gleam
+// From src/arc/module.gleam
+fn collect_exports(
+  evaluated: Dict(String, Dict(String, JsValue)),
+  specifier_map: Dict(String, String),
+  export_entries: List(ExportEntry),
+  scope_dict: Dict(String, Int),
+  locals: array.Array(JsValue),
+  heap: Heap,
+) -> #(Dict(String, JsValue), Heap)
+```
+
+For each export entry:
+
+- **LocalExport**: Look up the local variable by name in `scope_dict`, read from `locals` array
+- **ReExport**: Look up the dependency's exports in `evaluated`, extract the named export
+- **ReExportAll**: Copy all exports (except `"default"`) from the dependency
+- **ReExportNamespace**: Create a namespace object with all dependency exports
+
+<Note>
+Exports are values at evaluation time — if a module exports a mutable binding, the importer sees the **current value**, not a live binding.
+</Note>
+
+## Builtin modules
+
+Arc has one builtin module: `"arc"`.
+
+```javascript
+import { spawn, send, receive, self } from 'arc';
+
+const pid = spawn(() => {
+  const msg = receive();
+  log('Received:', msg);
+});
+
+send(pid, 'Hello!');
+```
+
+The `"arc"` module is **not** in the bundle. It's resolved at evaluation time from the builtins:
+
+```gleam
+// From src/arc/module.gleam
+fn extract_builtin_exports(h: Heap, b: Builtins) -> Dict(String, JsValue) {
+  case heap.read(h, b.arc) {
+    Some(ObjectSlot(properties: props, ..)) ->
+      dict.fold(props, dict.new(), fn(acc, name, prop) {
+        case prop {
+          DataProperty(value: v, ..) -> dict.insert(acc, name, v)
+          _ -> acc
+        }
+      })
+    _ -> dict.new()
+  }
+}
+```
+
+This extracts all properties from the `Arc` global object and treats them as exports.
+
+## Module bundling
+
+The `ModuleBundle` is a pure Erlang term — you can serialize it:
+
+```gleam
+pub fn serialize_bundle(bundle: ModuleBundle) -> BitArray {
+  erlang.term_to_binary(bundle)
+}
+
+pub fn deserialize_bundle(data: BitArray) -> ModuleBundle {
+  erlang.binary_to_term(data)
+}
+```
+
+**Use case:** Compile modules once, serialize to disk, and load the precompiled bundle later:
+
+```gleam
+// Compile once
+let assert Ok(bundle) = module.compile_bundle(entry, source, resolve_and_load)
+let binary = module.serialize_bundle(bundle)
+file.write_bytes(binary, to: "app.bundle")
+
+// Load later (no parsing!)
+let assert Ok(binary) = file.read_bytes("app.bundle")
+let bundle = module.deserialize_bundle(binary)
+let assert Ok(_) = module.evaluate_bundle(bundle, h, b, global_object)
+```
+
+<Tip>
+Precompiled bundles are portable across BEAM nodes — you can compile on one machine and execute on another.
+</Tip>
+
+## Circular dependencies
+
+Arc handles circular dependencies correctly:
+
+```javascript
+// a.js
+import { b } from './b.js';
+export const a = 'A';
+console.log('a.js: b =', b);
+
+// b.js
+import { a } from './a.js';
+export const b = 'B';
+console.log('b.js: a =', a);
+```
+
+**Evaluation order:**
+
+1. Start evaluating `a.js`
+2. `a.js` imports `b.js` → pause and evaluate `b.js`
+3. `b.js` imports `a.js` → **cycle detected**, skip re-evaluation
+4. `b.js` runs with `a = undefined` (not yet initialized)
+5. `b.js` exports `b = 'B'`
+6. Resume `a.js` with `b = 'B'`
+7. `a.js` exports `a = 'A'`
+
+**Output:**
+```
+b.js: a = undefined
+a.js: b = B
+```
+
+<Warning>
+Imported bindings in circular dependencies may be `undefined` if the exporting module hasn't run yet. Design your module graph to avoid tight cycles.
+</Warning>
+
+## Error handling
+
+Module errors are categorized:
+
+```gleam
+pub type ModuleError {
+  ParseError(String)       // Syntax error in source
+  CompileError(String)     // Unsupported feature or compiler bug
+  ResolutionError(String)  // Dependency not found
+  LinkError(String)        // Import binding failed
+  EvaluationError(JsValue) // Exception thrown during execution
+}
+```
+
+If a module throws during evaluation, the error is cached:
+
+```javascript
+// broken.js
+throw new Error('broken');
+
+// main.js
+import './broken.js';  // EvaluationError
+```
+
+The exception is caught and wrapped in `EvaluationError(JsValue)` where `JsValue` is the thrown error object.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Actor model" icon="users" href="/concepts/actor-model">
+    Learn how to use Arc.spawn for concurrent module execution
+  </Card>
+  
+  <Card title="JavaScript on BEAM" icon="code" href="/concepts/javascript-on-beam">
+    Understand how modules are compiled and executed on the BEAM
+  </Card>
+</CardGroup>

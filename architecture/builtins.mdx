@@ -1,0 +1,560 @@
+---
+title: Built-in objects
+description: Native JavaScript objects and the Arc namespace for BEAM interop
+---
+
+Arc implements ES2023+ built-in objects as native Gleam functions. The runtime provides standard JavaScript globals plus an `Arc` namespace for BEAM integration.
+
+## Built-in architecture
+
+**Location**: `src/arc/vm/builtins/*.gleam`
+
+Each built-in object is implemented as a Gleam module that exports:
+- **Initialization**: Create the constructor and prototype
+- **Methods**: Native function implementations
+- **Properties**: Standard properties (name, length, etc.)
+
+### Builtins registry
+
+```gleam
+pub type Builtins {
+  Builtins(
+    object: BuiltinInfo,      // Object constructor + prototype
+    function: BuiltinInfo,    // Function constructor + prototype
+    array: BuiltinInfo,       // Array constructor + prototype
+    string: BuiltinInfo,      // String constructor + prototype
+    number: BuiltinInfo,      // Number constructor + prototype
+    boolean: BuiltinInfo,     // Boolean constructor + prototype
+    symbol: BuiltinInfo,      // Symbol constructor + prototype
+    error: ErrorBuiltins,     // Error, TypeError, RangeError, etc.
+    promise: BuiltinInfo,     // Promise constructor + prototype
+    map: BuiltinInfo,         // Map constructor + prototype
+    set: BuiltinInfo,         // Set constructor + prototype
+    weak_map: BuiltinInfo,    // WeakMap constructor + prototype
+    weak_set: BuiltinInfo,    // WeakSet constructor + prototype
+    regexp: BuiltinInfo,      // RegExp constructor + prototype
+    generator: BuiltinInfo,   // Generator.prototype
+    math: Ref,                // Math object
+    json: Ref,                // JSON object
+    arc: Ref                  // Arc namespace (BEAM interop)
+  )
+}
+
+pub type BuiltinInfo {
+  BuiltinInfo(
+    constructor: Ref,         // Constructor function
+    prototype: Ref            // Prototype object
+  )
+}
+```
+
+## Standard built-ins
+
+### Object
+
+**File**: `src/arc/vm/builtins/object.gleam`
+
+<Accordion title="Object constructor methods">
+  - `Object.create(proto, [descriptors])` — Create object with specified prototype
+  - `Object.defineProperty(obj, key, descriptor)` — Define/modify property
+  - `Object.defineProperties(obj, descriptors)` — Define multiple properties
+  - `Object.getPrototypeOf(obj)` — Get object's prototype
+  - `Object.setPrototypeOf(obj, proto)` — Set object's prototype
+  - `Object.keys(obj)` — Array of enumerable own string keys
+  - `Object.values(obj)` — Array of enumerable own property values
+  - `Object.entries(obj)` — Array of [key, value] pairs
+  - `Object.assign(target, ...sources)` — Copy enumerable own properties
+  - `Object.freeze(obj)` — Make object immutable
+  - `Object.seal(obj)` — Prevent extensions, make properties non-configurable
+  - `Object.preventExtensions(obj)` — Prevent adding new properties
+  - `Object.isFrozen(obj)` — Check if frozen
+  - `Object.isSealed(obj)` — Check if sealed
+  - `Object.isExtensible(obj)` — Check if extensible
+  - `Object.getOwnPropertyNames(obj)` — Array of all own string keys
+  - `Object.getOwnPropertyDescriptor(obj, key)` — Get property descriptor
+  - `Object.getOwnPropertyDescriptors(obj)` — Get all descriptors
+  - `Object.hasOwn(obj, key)` — Check for own property (ES2022)
+</Accordion>
+
+<Accordion title="Object.prototype methods">
+  - `toString()` — Convert to string (`"[object Object]"`)
+  - `valueOf()` — Return primitive value (returns this)
+  - `hasOwnProperty(key)` — Check for own property
+  - `isPrototypeOf(obj)` — Check if this is in obj's prototype chain
+  - `propertyIsEnumerable(key)` — Check if property is enumerable
+</Accordion>
+
+### Array
+
+**File**: `src/arc/vm/builtins/array.gleam`
+
+<Accordion title="Array constructor methods">
+  - `Array.isArray(value)` — Check if value is an array
+  - `Array.from(arrayLike, [mapFn])` — Create array from iterable/array-like
+  - `Array.of(...items)` — Create array from arguments
+</Accordion>
+
+<Accordion title="Array.prototype methods">
+  **Mutating**:
+  - `push(...items)` — Add to end, return new length
+  - `pop()` — Remove from end, return item
+  - `shift()` — Remove from start, return item
+  - `unshift(...items)` — Add to start, return new length
+  - `splice(start, deleteCount, ...items)` — Remove/add elements
+  - `reverse()` — Reverse in place
+  - `sort([compareFn])` — Sort in place
+  - `fill(value, [start, end])` — Fill with value
+  
+  **Non-mutating**:
+  - `concat(...arrays)` — Merge arrays
+  - `slice([start, end])` — Extract subarray
+  - `join([separator])` — Join to string
+  - `indexOf(item, [start])` — Find first index
+  - `lastIndexOf(item, [start])` — Find last index
+  - `includes(item, [start])` — Check if contains (ES2016)
+  
+  **Iteration**:
+  - `forEach(fn, [thisArg])` — Execute fn for each element
+  - `map(fn, [thisArg])` — Transform elements
+  - `filter(fn, [thisArg])` — Select elements
+  - `reduce(fn, [initial])` — Reduce to single value
+  - `reduceRight(fn, [initial])` — Reduce right-to-left
+  - `find(fn, [thisArg])` — Find first matching element (ES2015)
+  - `findIndex(fn, [thisArg])` — Find first matching index (ES2015)
+  - `every(fn, [thisArg])` — Test if all match
+  - `some(fn, [thisArg])` — Test if any match
+  - `flat([depth])` — Flatten nested arrays (ES2019)
+  - `flatMap(fn, [thisArg])` — Map then flatten (ES2019)
+</Accordion>
+
+### String
+
+**File**: `src/arc/vm/builtins/string.gleam`
+
+<Accordion title="String constructor methods">
+  - `String.fromCharCode(...codes)` — Create string from char codes
+  - `String.fromCodePoint(...codePoints)` — Create string from code points (ES2015)
+</Accordion>
+
+<Accordion title="String.prototype methods">
+  - `charAt(index)` — Character at index
+  - `charCodeAt(index)` — Char code at index
+  - `codePointAt(index)` — Code point at index (ES2015)
+  - `concat(...strings)` — Concatenate strings
+  - `indexOf(search, [start])` — Find first occurrence
+  - `lastIndexOf(search, [start])` — Find last occurrence
+  - `slice(start, [end])` — Extract substring
+  - `substring(start, [end])` — Extract substring (legacy)
+  - `substr(start, [length])` — Extract substring (deprecated)
+  - `toLowerCase()` — Convert to lowercase
+  - `toUpperCase()` — Convert to uppercase
+  - `trim()` — Remove whitespace from both ends
+  - `trimStart()` / `trimLeft()` — Remove leading whitespace (ES2019)
+  - `trimEnd()` / `trimRight()` — Remove trailing whitespace (ES2019)
+  - `repeat(count)` — Repeat string (ES2015)
+  - `padStart(targetLength, [padString])` — Pad start (ES2017)
+  - `padEnd(targetLength, [padString])` — Pad end (ES2017)
+  - `startsWith(search, [start])` — Check prefix (ES2015)
+  - `endsWith(search, [end])` — Check suffix (ES2015)
+  - `includes(search, [start])` — Check substring (ES2015)
+  - `split(separator, [limit])` — Split to array
+  - `match(regexp)` — Match regexp
+  - `replace(search, replacement)` — Replace first occurrence
+  - `replaceAll(search, replacement)` — Replace all occurrences (ES2021)
+</Accordion>
+
+### Number
+
+**File**: `src/arc/vm/builtins/number.gleam`
+
+<Accordion title="Number constructor properties">
+  - `Number.EPSILON` — Smallest interval between numbers
+  - `Number.MAX_VALUE` — Largest finite number
+  - `Number.MIN_VALUE` — Smallest positive number
+  - `Number.MAX_SAFE_INTEGER` — 2^53 - 1
+  - `Number.MIN_SAFE_INTEGER` — -(2^53 - 1)
+  - `Number.POSITIVE_INFINITY` — Infinity
+  - `Number.NEGATIVE_INFINITY` — -Infinity
+  - `Number.NaN` — Not-a-Number
+</Accordion>
+
+<Accordion title="Number constructor methods">
+  - `Number.isFinite(value)` — Check if finite number
+  - `Number.isInteger(value)` — Check if integer
+  - `Number.isNaN(value)` — Check if NaN
+  - `Number.isSafeInteger(value)` — Check if safe integer (ES2015)
+  - `Number.parseFloat(string)` — Parse float
+  - `Number.parseInt(string, [radix])` — Parse integer
+</Accordion>
+
+<Accordion title="Number.prototype methods">
+  - `toFixed([digits])` — Format with fixed decimals
+  - `toExponential([digits])` — Format in exponential notation
+  - `toPrecision([precision])` — Format to precision
+  - `toString([radix])` — Convert to string (with radix)
+  - `valueOf()` — Return primitive value
+</Accordion>
+
+### Function
+
+**File**: `src/arc/vm/builtins/function.gleam`
+
+<Accordion title="Function.prototype methods">
+  - `call(thisArg, ...args)` — Call with specified this and arguments
+  - `apply(thisArg, argsArray)` — Call with specified this and array of arguments
+  - `bind(thisArg, ...args)` — Create bound function (ES2015)
+  - `toString()` — Return function source (returns "[native code]" for builtins)
+</Accordion>
+
+### Promise
+
+**File**: `src/arc/vm/builtins/promise.gleam`
+
+<Accordion title="Promise constructor methods">
+  - `Promise.resolve(value)` — Create resolved promise
+  - `Promise.reject(reason)` — Create rejected promise
+  - `Promise.all(promises)` — Wait for all promises (ES2015)
+  - `Promise.race(promises)` — Wait for first promise (ES2015)
+  - `Promise.allSettled(promises)` — Wait for all to settle (ES2020)
+  - `Promise.any(promises)` — Wait for first fulfillment (ES2021)
+</Accordion>
+
+<Accordion title="Promise.prototype methods">
+  - `then(onFulfilled, [onRejected])` — Chain promise
+  - `catch(onRejected)` — Handle rejection
+  - `finally(onFinally)` — Execute regardless of outcome (ES2018)
+</Accordion>
+
+### Map & Set
+
+**Files**: `src/arc/vm/builtins/map.gleam`, `src/arc/vm/builtins/set.gleam`
+
+<Accordion title="Map.prototype methods">
+  - `set(key, value)` — Add/update entry
+  - `get(key)` — Retrieve value
+  - `has(key)` — Check if key exists
+  - `delete(key)` — Remove entry
+  - `clear()` — Remove all entries
+  - `forEach(fn, [thisArg])` — Iterate over entries
+  - `keys()` — Iterator over keys
+  - `values()` — Iterator over values
+  - `entries()` — Iterator over [key, value] pairs
+  - `size` (property) — Number of entries
+</Accordion>
+
+<Accordion title="Set.prototype methods">
+  - `add(value)` — Add value
+  - `has(value)` — Check if value exists
+  - `delete(value)` — Remove value
+  - `clear()` — Remove all values
+  - `forEach(fn, [thisArg])` — Iterate over values
+  - `values()` — Iterator over values
+  - `keys()` — Iterator over values (alias)
+  - `entries()` — Iterator over [value, value] pairs
+  - `size` (property) — Number of values
+</Accordion>
+
+### Error types
+
+**File**: `src/arc/vm/builtins/error.gleam`
+
+- `Error(message)` — Base error
+- `TypeError(message)` — Type errors
+- `RangeError(message)` — Range/bounds errors
+- `ReferenceError(message)` — Reference errors (undefined variables)
+- `SyntaxError(message)` — Syntax errors
+- `URIError(message)` — URI encoding/decoding errors
+
+All error constructors support:
+- `new Error(message)` — Create error with message
+- `.message` property — Error message
+- `.name` property — Error type name
+- `.toString()` — Format as string
+
+### Math object
+
+**File**: `src/arc/vm/builtins/math.gleam`
+
+<Accordion title="Math constants">
+  - `Math.E` — Euler's number (~2.718)
+  - `Math.PI` — π (~3.14159)
+  - `Math.LN2` — ln(2)
+  - `Math.LN10` — ln(10)
+  - `Math.LOG2E` — log₂(e)
+  - `Math.LOG10E` — log₁₀(e)
+  - `Math.SQRT2` — √2
+  - `Math.SQRT1_2` — √(1/2)
+</Accordion>
+
+<Accordion title="Math methods">
+  - `Math.abs(x)` — Absolute value
+  - `Math.sign(x)` — Sign (-1, 0, 1)
+  - `Math.ceil(x)` — Ceiling
+  - `Math.floor(x)` — Floor
+  - `Math.round(x)` — Round to nearest integer
+  - `Math.trunc(x)` — Truncate to integer (ES2015)
+  - `Math.min(...values)` — Minimum value
+  - `Math.max(...values)` — Maximum value
+  - `Math.pow(base, exponent)` — Exponentiation
+  - `Math.sqrt(x)` — Square root
+  - `Math.cbrt(x)` — Cube root (ES2015)
+  - `Math.exp(x)` — e^x
+  - `Math.log(x)` — Natural logarithm
+  - `Math.log2(x)` — Base-2 logarithm (ES2015)
+  - `Math.log10(x)` — Base-10 logarithm (ES2015)
+  - `Math.sin(x)` — Sine
+  - `Math.cos(x)` — Cosine
+  - `Math.tan(x)` — Tangent
+  - `Math.asin(x)` — Arcsine
+  - `Math.acos(x)` — Arccosine
+  - `Math.atan(x)` — Arctangent
+  - `Math.atan2(y, x)` — Two-argument arctangent
+  - `Math.random()` — Random number in [0, 1)
+</Accordion>
+
+### JSON object
+
+**File**: `src/arc/vm/builtins/json.gleam`
+
+- `JSON.parse(text, [reviver])` — Parse JSON string to JavaScript value
+- `JSON.stringify(value, [replacer, space])` — Serialize value to JSON string
+
+## Arc namespace (BEAM interop)
+
+**File**: `src/arc/vm/builtins/arc.gleam`
+
+The `Arc` namespace provides JavaScript access to BEAM VM features:
+
+### Process management
+
+<CodeGroup>
+  ```javascript Arc.spawn
+  // Spawn a new BEAM process running a JavaScript function
+  const pid = Arc.spawn(() => {
+    while (true) {
+      const msg = Arc.receive();
+      console.log("Received:", msg);
+    }
+  });
+  ```
+  
+  ```javascript Arc.self
+  // Get current process PID
+  const myPid = Arc.self();
+  ```
+  
+  ```javascript Arc.send
+  // Send message to a process
+  Arc.send(pid, { type: "hello", data: 42 });
+  ```
+  
+  ```javascript Arc.receive
+  // Receive message (blocks until message arrives)
+  const msg = Arc.receive();
+  
+  // With timeout (returns null on timeout):
+  const msg = Arc.receive(1000);  // Wait max 1 second
+  ```
+</CodeGroup>
+
+### Utilities
+
+<CodeGroup>
+  ```javascript Arc.log
+  // Log to Erlang console (bypasses JS console)
+  Arc.log("Debug:", value);
+  ```
+  
+  ```javascript Arc.sleep
+  // Sleep current process for milliseconds
+  Arc.sleep(1000);  // Sleep 1 second
+  ```
+  
+  ```javascript Arc.peek
+  // Inspect promise state (non-standard)
+  const state = Arc.peek(promise);
+  // Returns: {type: "pending"}
+  //       or {type: "resolved", value: ...}
+  //       or {type: "rejected", reason: ...}
+  ```
+</CodeGroup>
+
+### Message serialization
+
+Messages sent via `Arc.send` are serialized to a portable format:
+
+**Supported types**:
+- Primitives: `null`, `undefined`, `boolean`, `number`, `string`, `bigint`, `symbol`
+- Arrays (shallow)
+- Plain objects `{...}` (shallow)
+- PIDs (first-class values)
+
+**Not supported**:
+- Functions
+- Dates, RegExp
+- Circular references
+- Prototypes (objects become plain maps)
+
+```javascript
+// OK:
+Arc.send(pid, {
+  id: 42,
+  name: "Alice",
+  tags: ["admin", "user"]
+});
+
+// Error: functions can't be serialized
+Arc.send(pid, { handler: () => {} });
+```
+
+### PID objects
+
+PIDs are opaque JavaScript objects:
+
+```javascript
+const pid = Arc.spawn(worker);
+
+// PIDs have a toString method:
+String(pid);  // "<0.123.0>"
+
+// Can be stored in data structures:
+const workers = [pid1, pid2, pid3];
+const registry = { server: serverPid, logger: loggerPid };
+
+// Can be sent in messages:
+Arc.send(managerPid, { type: "register", pid: myPid });
+```
+
+## Native function dispatch
+
+Built-in methods are implemented as native Gleam functions:
+
+```gleam
+// VM encounters NativeFunction during Call:
+case heap.read(state.heap, callee_ref) {
+  Some(ObjectSlot(kind: NativeFunction(native), ..)) -> {
+    call_native(state, native, args, rest_stack, this_val)
+  }
+}
+
+// Dispatch to built-in module:
+fn call_native(
+  state: State,
+  native: NativeFn,
+  args: List(JsValue),
+  rest_stack: List(JsValue),
+  this_val: JsValue
+) -> Result(State, #(StepResult, JsValue, Heap)) {
+  let #(state, result) = case native {
+    ArrayPush -> builtins_array.push(this_val, args, state)
+    ArrayPop -> builtins_array.pop(this_val, args, state)
+    StringSlice -> builtins_string.slice(this_val, args, state)
+    // ... 100+ native functions
+  }
+  
+  case result {
+    Ok(return_value) -> Ok(State(
+      ..state,
+      stack: [return_value, ..rest_stack],
+      pc: state.pc + 1
+    ))
+    Error(thrown_value) -> Error(#(Thrown, thrown_value, state.heap))
+  }
+}
+```
+
+**Native function signature**:
+
+```gleam
+pub fn builtin_method(
+  this: JsValue,           // Receiver (this binding)
+  args: List(JsValue),     // Arguments
+  state: State             // VM state
+) -> #(State, Result(JsValue, JsValue)) {
+  // Return: (updated_state, Ok(return_value)) or (state, Error(exception))
+}
+```
+
+## Adding new built-ins
+
+To add a new built-in method:
+
+<Steps>
+  <Step title="Define native function variant">
+    Add to `src/arc/vm/value.gleam`:
+    ```gleam
+    pub type NativeFn {
+      // ... existing variants ...
+      MyNewMethod
+    }
+    ```
+  </Step>
+  
+  <Step title="Implement the method">
+    In the appropriate builtin module (e.g., `src/arc/vm/builtins/array.gleam`):
+    ```gleam
+    pub fn my_new_method(
+      this: JsValue,
+      args: List(JsValue),
+      state: State
+    ) -> #(State, Result(JsValue, JsValue)) {
+      // Implementation
+      #(state, Ok(result_value))
+    }
+    ```
+  </Step>
+  
+  <Step title="Register in prototype">
+    In the `init` function:
+    ```gleam
+    pub fn init(h: Heap, function_proto: Ref) -> #(Heap, Ref, Ref) {
+      let methods = [
+        // ... existing methods ...
+        #("myNewMethod", NativeFunction(MyNewMethod), 0)
+      ]
+      // ... create prototype with methods ...
+    }
+    ```
+  </Step>
+  
+  <Step title="Add dispatch case">
+    In `src/arc/vm/vm.gleam`, add to `call_native`:
+    ```gleam
+    case native {
+      // ... existing cases ...
+      MyNewMethod -> builtins_array.my_new_method(this_val, args, state)
+    }
+    ```
+  </Step>
+</Steps>
+
+## Performance notes
+
+<Note>
+Built-in methods are **native Gleam functions**, not bytecode. They execute directly on the BEAM VM, making them significantly faster than JavaScript implementations.
+</Note>
+
+**Performance tips**:
+- Use native methods when possible (`Array.prototype.map` is faster than a hand-rolled loop)
+- Minimize allocations (native methods can update heap efficiently)
+- Arc-specific: `Arc.send` is very fast (direct BEAM message passing)
+
+**Benchmarks** (approximate, on modern hardware):
+- `Array.prototype.push` — ~1M ops/sec
+- `Array.prototype.map` — ~100K ops/sec (depends on callback)
+- `JSON.parse` — ~50K ops/sec (small objects)
+- `Arc.send` — ~500K msgs/sec
+
+## Further reading
+
+<CardGroup cols={2}>
+  <Card title="VM" icon="microchip" href="./vm.mdx">
+    How native functions are invoked
+  </Card>
+  <Card title="Compiler" icon="gears" href="./compiler.mdx">
+    How user code is compiled
+  </Card>
+  <Card title="Builtins (source)" icon="code" href="https://github.com/arc-lang/arc/tree/main/src/arc/vm/builtins">
+    Complete builtin implementations
+  </Card>
+</CardGroup>

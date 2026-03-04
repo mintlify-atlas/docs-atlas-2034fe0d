@@ -1,0 +1,158 @@
+---
+title: Introduction
+description: Arc is a highly experimental JavaScript runtime built on the BEAM VM, bringing JavaScript's familiar syntax to Erlang's legendary concurrency model
+---
+
+# Arc - JavaScript on the BEAM
+
+Arc is a highly experimental JavaScript runtime that runs on the BEAM virtual machine, combining JavaScript's familiar syntax with Erlang's legendary concurrency and fault-tolerance capabilities. Write JavaScript code that leverages lightweight processes, message passing, and the battle-tested OTP framework.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get Arc running and execute your first concurrent JavaScript program in minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Build Arc from source with Gleam and start experimenting
+  </Card>
+  <Card title="Core concepts" icon="lightbulb" href="/concepts/overview">
+    Understand how Arc brings JavaScript to the BEAM
+  </Card>
+  <Card title="API reference" icon="book" href="/api/arc-namespace">
+    Complete reference for Arc's concurrency primitives and built-in APIs
+  </Card>
+</CardGroup>
+
+## Why Arc?
+
+Arc bridges two worlds: JavaScript's ubiquitous syntax and the BEAM's proven concurrency model. Instead of callbacks, promises, or async/await, Arc uses the actor model with lightweight processes and message passing.
+
+<CardGroup cols={2}>
+  <Card title="True concurrency" icon="bolt">
+    Spawn thousands of lightweight processes with `Arc.spawn()`. Each process has its own heap and runs independently on BEAM's preemptive scheduler.
+  </Card>
+  <Card title="Message passing" icon="envelope">
+    Communicate between processes using `Arc.send()` and `Arc.receive()`. No shared memory, no race conditions, no locks.
+  </Card>
+  <Card title="Process isolation" icon="shield">
+    Each spawned process gets a complete copy of the VM state. Mutations in child processes never affect the parent.
+  </Card>
+  <Card title="Familiar syntax" icon="javascript">
+    Write standard JavaScript with all the language features you know: functions, closures, objects, arrays, and ES6+ syntax.
+  </Card>
+</CardGroup>
+
+## Hello, processes
+
+Here's a simple example showing Arc's concurrency primitives in action:
+
+```javascript simple.js
+const pid = Arc.spawn(() => {
+	const message = Arc.receive();
+	Arc.log(message);
+	Arc.log(`${Arc.self()}: Hello from child`);
+});
+
+Arc.send(pid, `${Arc.self()}: Hello from main`);
+```
+
+This code:
+1. Spawns a new process with `Arc.spawn()`
+2. The child process blocks on `Arc.receive()` waiting for a message
+3. The main process sends a message using `Arc.send(pid, message)`
+4. Both processes log their PIDs with `Arc.self()`
+
+## Key features
+
+### Actor-based concurrency
+
+Arc implements the actor model. Every `Arc.spawn()` creates a lightweight process (actor) with its own mailbox. Processes communicate exclusively through asynchronous message passing:
+
+```javascript counter_actor.js
+var counter = Arc.spawn(() => {
+	var count = 0;
+	while (true) {
+		var msg = Arc.receive();
+		if (msg.type === 'inc') {
+			count = count + msg.n;
+			Arc.log('counter: incremented by', msg.n, '-> now', count);
+		}
+		if (msg.type === 'get') {
+			Arc.send(msg.from, { type: 'value', count: count });
+		}
+	}
+});
+
+Arc.send(counter, { type: 'inc', n: 10 });
+Arc.send(counter, { type: 'get', from: Arc.self() });
+
+var result = Arc.receive(1000);
+Arc.log('Current value:', result.count);
+```
+
+### Process isolation
+
+Each spawned process receives a complete copy of the VM state. Modifications in one process don't affect others:
+
+```javascript mutability.js
+let i = 0;
+const main = Arc.self();
+
+Arc.spawn(() => {
+	i = 10;
+	Arc.log(Arc.self(), 'I set `i` to', i);
+	Arc.send(main);
+});
+
+Arc.log(main, 'but I see that `i` is', i); // Still 0!
+```
+
+### True parallel execution
+
+The BEAM scheduler distributes processes across cores. Multiple processes run truly concurrently:
+
+```javascript concurrent.js
+function run(name, delay) {
+	Arc.log(Arc.self(), 'is starting');
+	let i = 1;
+	while (true) {
+		Arc.log(`${name} tick`, i);
+		i = i + 1;
+		Arc.sleep(delay);
+	}
+}
+
+Arc.spawn(() => run('[Process A]', 50));
+Arc.spawn(() => run('    [Process B]', 200));
+
+Arc.log('  [Main] sleeping... watch A and B interleave!');
+Arc.sleep(800);
+```
+
+### Built-in JavaScript APIs
+
+Arc implements many standard JavaScript built-ins:
+
+- **Global objects**: `Object`, `Array`, `Function`, `String`, `Number`, `Boolean`, `Symbol`, `BigInt`
+- **Collections**: `Map`, `Set`, `WeakMap`, `WeakSet`
+- **Errors**: `Error`, `TypeError`, `ReferenceError`, `SyntaxError`, `RangeError`
+- **Utilities**: `JSON`, `Math`, `RegExp`, `Promise`
+- **Arc extensions**: `Arc.spawn()`, `Arc.send()`, `Arc.receive()`, `Arc.self()`, `Arc.sleep()`, `Arc.log()`
+
+## Current status
+
+<Warning>
+Arc is highly experimental research software. It's not production-ready and many JavaScript features are still unimplemented. Use it to explore ideas, learn about the BEAM, and experiment with alternative concurrency models.
+</Warning>
+
+Arc aims for ECMAScript specification compliance and tracks progress using the official Test262 conformance suite. Check the project repository for current test262 results and implementation status.
+
+## What's next?
+
+<CardGroup cols={2}>
+  <Card title="Get started" icon="play" href="/quickstart">
+    Install Arc and run your first program
+  </Card>
+  <Card title="Learn the API" icon="book-open" href="/api/arc-namespace">
+    Explore Arc's concurrency primitives
+  </Card>
+</CardGroup>

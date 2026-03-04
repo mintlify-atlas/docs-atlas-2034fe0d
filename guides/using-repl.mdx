@@ -1,0 +1,328 @@
+---
+title: Using the REPL
+description: Interactive JavaScript development with Arc's read-eval-print loop
+---
+
+Arc includes a powerful REPL (Read-Eval-Print Loop) for interactive JavaScript development. The REPL lets you experiment with JavaScript code, test Arc features, and debug programs interactively.
+
+## Starting the REPL
+
+Launch the REPL by running `arc` with no arguments:
+
+```bash
+arc
+```
+
+You'll see the welcome banner:
+
+```
+arc -- JavaScript on the BEAM
+Run /help for commands, Ctrl+C to exit.
+
+> 
+```
+
+## Evaluating JavaScript
+
+Type any JavaScript expression and press Enter to evaluate it:
+
+```javascript
+> 2 + 2
+4
+
+> const greeting = "Hello, BEAM"
+undefined
+
+> greeting
+'Hello, BEAM'
+
+> [1, 2, 3].map(x => x * 2)
+[ 2, 4, 6 ]
+```
+
+### How the REPL displays values
+
+The Arc REPL uses a Chrome DevTools-style inspector to format output:
+
+<CodeGroup>
+```javascript Primitives
+> undefined
+undefined
+
+> null
+null
+
+> true
+true
+
+> 42
+42
+
+> "hello"
+'hello'
+
+> 123n
+123n
+```
+
+```javascript Objects and arrays
+> { name: "Arc", version: 1 }
+{ name: 'Arc', version: 1 }
+
+> [1, 2, 3]
+[ 1, 2, 3 ]
+
+> new Map([["key", "value"]])
+Map(1)
+
+> /abc/gi
+/abc/gi
+```
+
+```javascript Functions
+> function greet(name) { return "Hello, " + name }
+[Function: greet]
+
+> () => 42
+[Function (anonymous)]
+```
+</CodeGroup>
+
+<Note>
+  Circular references are detected automatically and displayed as `[Circular]` to prevent infinite recursion.
+</Note>
+
+## REPL commands
+
+The REPL provides several special commands that start with `/`:
+
+### /help - Show available commands
+
+```
+> /help
+    /clear - clear the console
+    /help  - show this message
+    /reset - reset the REPL state
+    /exit  - exit the REPL
+```
+
+### /clear - Clear the screen
+
+Clears the terminal screen while preserving the REPL state:
+
+```
+> /clear
+```
+
+This is equivalent to pressing Ctrl+L in most terminals, but works cross-platform.
+
+### /reset - Reset REPL state
+
+Resets the REPL to its initial state, clearing all variables and restoring the global environment:
+
+```
+> const x = 42
+undefined
+
+> x
+42
+
+> /reset
+arc -- JavaScript on the BEAM
+Run /help for commands, Ctrl+C to exit.
+
+> x
+Uncaught exception: ReferenceError: x is not defined
+```
+
+<Warning>
+  The `/reset` command destroys all variables, functions, and state. Use it when you want a fresh start without restarting Arc.
+</Warning>
+
+### /heap - Inspect heap slots
+
+The `/heap` command lets you peek into Arc's internal object representation:
+
+```
+> /heap { x: 10, y: 20 }
+ObjectSlot(
+  kind: OrdinaryObject,
+  properties: {"x": DataProperty(...), "y": DataProperty(...)},
+  ...
+)
+```
+
+This is primarily useful for:
+- Debugging Arc's VM internals
+- Understanding object representation
+- Learning how the heap works
+
+<Note>
+  The `/heap` command requires an expression argument. Running `/heap` alone shows usage instructions.
+</Note>
+
+### /exit - Exit the REPL
+
+```
+> /exit
+Goodbye!
+```
+
+You can also exit with Ctrl+C or Ctrl+D.
+
+## Working with multi-line code
+
+The REPL currently requires all code to be entered on a single line. For multi-line functions or blocks, use semicolons or write the code compactly:
+
+```javascript
+> function factorial(n) { return n <= 1 ? 1 : n * factorial(n - 1) }
+[Function: factorial]
+
+> factorial(5)
+120
+```
+
+<Tip>
+  For complex multi-line programs, save your code to a `.js` file and run it with `arc file.js` instead of using the REPL.
+</Tip>
+
+## REPL state and persistence
+
+The REPL maintains state across evaluations:
+
+- **Variables** declared with `let`, `const`, or `var` persist between commands
+- **Functions** remain defined until you reset
+- **Global objects** (like `Array`, `Object`, `Math`) are always available
+
+```javascript
+> let count = 0
+undefined
+
+> count++
+0
+
+> count++
+1
+
+> count
+2
+```
+
+However, the REPL state is **not saved** when you exit. If you need persistent storage, write your code to a file.
+
+## Error handling
+
+The REPL catches and displays three types of errors:
+
+<Steps>
+  <Step title="Syntax errors">
+    Caught during parsing, before execution:
+
+    ```
+    > const x = ;
+    SyntaxError: Unexpected token ';'
+    ```
+  </Step>
+
+  <Step title="Compile errors">
+    Caught during bytecode compilation:
+
+    ```
+    > break;
+    compile error: break outside loop
+    ```
+  </Step>
+
+  <Step title="Runtime errors">
+    Thrown during execution:
+
+    ```
+    > x.foo.bar
+    Uncaught exception: TypeError: Cannot read property 'bar' of undefined
+    ```
+  </Step>
+</Steps>
+
+Errors don't crash the REPL — you can continue working after any error.
+
+## Using Arc APIs in the REPL
+
+The REPL has access to all Arc runtime features:
+
+```javascript
+> Arc.spawn(() => { Arc.log("Hello from process!") })
+Pid<0.123.0>
+```
+
+```javascript
+> const parent = Arc.self()
+undefined
+
+> Arc.spawn(() => { Arc.send(parent, "Hello!") })
+Pid<0.124.0>
+
+> Arc.receive(1000)
+'Hello!'
+```
+
+<Warning>
+  Be careful with `Arc.receive()` in the REPL. If no message arrives before the timeout, it returns `undefined`. Without a timeout, it blocks forever.
+</Warning>
+
+## REPL limitations
+
+The Arc REPL has a few limitations:
+
+- **No multi-line editing**: Complex code should be written in files
+- **No history persistence**: Command history is lost when you exit
+- **No tab completion**: You must type names in full
+- **No syntax highlighting**: Plain text input only
+
+These are areas for future improvement.
+
+## Example REPL session
+
+Here's a complete example showing how to use the REPL to explore Arc's actor model:
+
+```javascript
+> // Create a counter actor
+> const counter = Arc.spawn(() => {
+    let count = 0;
+    while (true) {
+      const msg = Arc.receive();
+      if (msg === "inc") count++;
+      if (msg === "get") Arc.send(msg.reply, count);
+    }
+  })
+Pid<0.125.0>
+
+> // Send some messages
+> Arc.send(counter, "inc")
+undefined
+
+> Arc.send(counter, "inc")
+undefined
+
+> Arc.send(counter, "inc")
+undefined
+
+> // Query the count
+> Arc.send(counter, { type: "get", reply: Arc.self() })
+undefined
+
+> Arc.receive(1000)
+3
+```
+
+## What's next?
+
+Now that you understand the REPL, dive deeper into Arc's features:
+
+<CardGroup cols={2}>
+  <Card title="Actor programming" icon="bolt" href="/guides/actor-programming">
+    Learn the actor model
+  </Card>
+  <Card title="Running code" icon="play" href="/guides/running-code">
+    Running scripts and modules
+  </Card>
+</CardGroup>
